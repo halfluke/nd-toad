@@ -1,0 +1,136 @@
+# Sophos XG / XGS SFOS security checks
+# Input: Entities.xml from System > Backup & firmware > Import export
+#        (extracted from the unencrypted .tar, file must be named Entities.xml)
+#
+# XML tag names confirmed from the official Sophos open-source repositories:
+#   - sophos/sophos-firewall-sdk (Apache 2.0)   — admin.py, system.py templates
+#   - sophos/sophosfirewall-ansible (GPL-3.0)    — sfos_syslog.py, sfos_admin_settings.py
+#   - Sophos community posts                      — Entities.xml root / VLAN migration
+#
+# Root element: <Configuration APIVersion="NNNN.N" IPS_CAT_VER="N">
+# Individual objects appear as direct children, e.g. <AdminSettings>, <FirewallRule>, ...
+#
+profile: sophos_xg
+
+checks:
+
+  - id: XG-MGMT-001
+    generic_id: MGMT-001
+    title: "Telnet must be disabled on all interfaces"
+    severity: critical
+    cis:
+      - {benchmark: "CIS Sophos XG", control: "1.1.1", level: 1}
+    probe:
+      type: forbidden_regex
+      # Telnet enable is expressed via LocalServiceACL or DeviceAccess rules
+      # (?is): case-insensitive + dotall so .*? spans across XML newlines
+      pattern: '(?is)<Service>Telnet</Service>.*?<Action>Accept</Action>'
+    remediation: "In Administration > Device Access: ensure Telnet is not allowed on any zone."
+
+  - id: XG-MGMT-002
+    generic_id: MGMT-002
+    title: "HTTP admin access must be disabled"
+    severity: high
+    cis:
+      - {benchmark: "CIS Sophos XG", control: "1.1.2", level: 1}
+    probe:
+      type: manual
+      # The Entities.xml export has NO configurable HTTP admin port: <WebAdminSettings>
+      # only exposes <HTTPSport>. A regex for '<Port>80</Port>' fires on any firewall
+      # rule that permits HTTP to web servers — a significant false positive on virtually
+      # every real deployment. Manual review of Device access settings is required.
+    remediation: "In Administration > Device access: verify HTTP is disabled on all zones. Only HTTPS should be listed as an allowed admin service. The GUI default is HTTPS-only; confirm no zone has HTTP re-enabled."
+
+  - id: XG-MGMT-003
+    generic_id: MGMT-005
+    title: "Admin session idle timeout must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Sophos XG", control: "1.2.1", level: 1}
+    probe:
+      type: required_regex
+      # Confirmed tag: AdminSettings > LoginSecurity > LogoutSession (sfos_admin_settings.py)
+      # Also accept legacy <SessionTimeout> or <LogoutSession> at any depth
+      pattern: '(?i)<(LogoutSession|SessionTimeout)>[1-9]'
+    remediation: "System > Administration > Admin and user settings > Login security: set Logout session to ≤10 min."
+
+  - id: XG-AAA-001
+    generic_id: AAA-001
+    title: "Admin authentication must be via external identity provider or MFA"
+    severity: high
+    cis:
+      - {benchmark: "CIS Sophos XG", control: "2.1.1", level: 1}
+    probe:
+      type: manual
+    remediation: "In Authentication > Authentication Servers: configure RADIUS/LDAP/TACACS+ for admin authentication."
+
+  - id: XG-AUTH-001
+    generic_id: AUTH-001
+    title: "Default admin password must be changed"
+    severity: critical
+    cis:
+      - {benchmark: "CIS Sophos XG", control: "2.2.1", level: 1}
+    probe:
+      type: manual
+    remediation: "Verify the admin account password has been changed from factory default."
+
+  - id: XG-SNMP-001
+    generic_id: SNMP-001
+    title: "SNMP must use v3 with authentication and privacy"
+    severity: high
+    cis:
+      - {benchmark: "CIS Sophos XG", control: "3.1.1", level: 1}
+    probe:
+      type: forbidden_regex
+      # Entities.xml: <SNMPv3User><SecurityLevel> should NOT be NoAuthNoPriv or AuthNoPriv
+      # Also flag v1/v2c community strings — legacy SNMP
+      pattern: '(?i)<SecurityLevel>(NoAuthNoPriv|AuthNoPriv)</SecurityLevel>'
+    remediation: "System > Administration > SNMP: use SNMPv3 with AuthPriv security level only."
+
+  - id: XG-LOG-001
+    generic_id: LOG-001
+    title: "Remote syslog must be configured"
+    severity: high
+    cis:
+      - {benchmark: "CIS Sophos XG", control: "4.1.1", level: 1}
+    probe:
+      type: required_regex
+      # Confirmed tag from sfos_syslog.py template: <SyslogServers><ServerAddress>
+      # <SyslogServers> entity is used for individual syslog server objects
+      pattern: '(?i)<SyslogServers\b'
+    remediation: "Configure > System services > Log settings: configure syslog server with <SyslogServers>."
+
+  - id: XG-TIME-001
+    generic_id: TIME-001
+    title: "NTP server must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Sophos XG", control: "5.1.1", level: 1}
+    probe:
+      type: required_regex
+      # Confirmed tag from sfos_time.py: xml_tag="Time" with <NTPServerList><NTPServer1><Server>
+      # Also accept older flat tags <NTPServer>, <NTPServer1>, <UseNTP>Enable
+      pattern: '(?i)(<NTPServerList\b|<NTPServer[12]?\b|<UseNTP>Enable)'
+    remediation: "System > Administration > Time: configure NTP server and enable Use NTP."
+
+  - id: XG-POLICY-001
+    generic_id: POLICY-001
+    title: "Firewall rules must not permit any-to-any traffic"
+    severity: critical
+    cis:
+      - {benchmark: "CIS Sophos XG", control: "6.1.1", level: 1}
+    probe:
+      type: manual
+    remediation: "Review FirewallRule entries: ensure no rule has Action=Accept with no SourceZones/DestinationZones restriction."
+
+  - id: XG-POLICY-002
+    generic_id: POLICY-002
+    title: "IPS policy should be applied to allowed traffic"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Sophos XG", control: "6.2.1", level: 1}
+    probe:
+      type: required_regex
+      # Confirmed tag from createfwrule.j2: <NetworkPolicy><IntrusionPrevention>
+      pattern: '(?i)<IntrusionPrevention>[^<]{2,}'
+    remediation: "In FirewallRule: set <IntrusionPrevention> to a named IPS policy on all Accept rules."

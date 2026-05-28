@@ -1,0 +1,136 @@
+# HPE Aruba / ProCurve security checks — generic hardening + CIS where published
+profile: hpe_aruba
+
+checks:
+
+  - id: ARUBA-MGMT-001
+    generic_id: MGMT-001
+    title: "Telnet must be disabled"
+    severity: critical
+    cis:
+      - {benchmark: "CIS HPE Aruba", control: "1.1.1", level: 1}
+    probe:
+      type: required_regex
+      # AOS-S/ProCurve: telnet is ON by default — 'no telnet-server' must be explicitly present.
+      # AOS-CX: telnet is OFF by default, but best practice still requires the explicit 'no telnet-server'
+      # statement for auditability. Both our sample files already include it.
+      pattern: '(?m)^\s*no\s+telnet-server\b'
+    remediation: "Add 'no telnet-server' to the configuration. On AOS-S/ProCurve, telnet is enabled by default and must be explicitly disabled."
+
+  - id: ARUBA-MGMT-002
+    generic_id: MGMT-003
+    title: "SSH must be enabled"
+    severity: high
+    cis:
+      - {benchmark: "CIS HPE Aruba", control: "1.1.2", level: 1}
+    probe:
+      type: required_regex
+      # AOS-CX: 'ssh server vrf mgmt' or 'ssh server vrf default'
+      # AOS-S/ProCurve: 'crypto key generate ssh'
+      pattern: '(?m)^\s*(crypto\s+key\s+generate\s+ssh|ssh\s+server\s+vrf\s+(default|mgmt))\b'
+    remediation: "AOS-CX: ssh server vrf mgmt. AOS-S/ProCurve: crypto key generate ssh rsa bits 2048"
+
+  - id: ARUBA-MGMT-003
+    generic_id: MGMT-002
+    title: "HTTP web management should be disabled"
+    severity: high
+    cis:
+      - {benchmark: "CIS HPE Aruba", control: "1.1.3", level: 1}
+    probe:
+      type: forbidden_regex
+      # AOS-S/ProCurve: 'web-management plaintext' enables HTTP
+      # AOS-CX does not have a plain-HTTP management mode; HTTPS is the only option.
+      pattern: '(?m)^\s*web-management\s+plaintext'
+    remediation: "AOS-S/ProCurve: no web-management plaintext. AOS-CX: HTTP management not available; ensure https-server vrf mgmt."
+
+  - id: ARUBA-MGMT-004
+    generic_id: MGMT-004
+    title: "Management access must be restricted by source IP or management VRF"
+    severity: high
+    cis:
+      - {benchmark: "CIS HPE Aruba", control: "1.2.1", level: 1}
+    probe:
+      type: required_regex
+      # AOS-S/ProCurve: 'ip authorized-managers' restricts access by source IP
+      # AOS-CX: 'ssh server vrf mgmt|oobm' or 'https-server vrf mgmt|oobm' restricts
+      # management to the dedicated management or out-of-band management VRF.
+      # 'oobm' is the dedicated OOB management VRF on AOS-CX hardware appliances.
+      pattern: '(?m)^\s*(ip\s+(authorized-managers|ssh\s+authorized-managers)\s+|ssh\s+server\s+vrf\s+(mgmt|oobm)|https-server\s+vrf\s+(mgmt|oobm))'
+    remediation: "AOS-S: ip authorized-managers <mgmt-ip/mask> access manager. AOS-CX: ssh server vrf mgmt (restrict SSH to mgmt VRF)."
+
+  - id: ARUBA-MGMT-005
+    generic_id: AAA-002
+    title: "Login banner must be configured"
+    severity: low
+    cis:
+      - {benchmark: "CIS HPE Aruba", control: "1.3.1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*banner\s+(motd|exec)\s+'
+    remediation: "Configure: banner motd <legal notice>"
+
+  - id: ARUBA-AAA-001
+    generic_id: AAA-001
+    title: "AAA authentication must be configured"
+    severity: critical
+    cis:
+      - {benchmark: "CIS HPE Aruba", control: "2.1.1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*aaa\s+authentication\s+'
+    remediation: "Configure AAA authentication for console and SSH lines."
+
+  - id: ARUBA-AUTH-001
+    generic_id: AUTH-001
+    title: "Manager password must be configured (not default)"
+    severity: critical
+    cis:
+      - {benchmark: "CIS HPE Aruba", control: "2.2.1", level: 1}
+    probe:
+      type: forbidden_regex
+      pattern: '(?m)^\s*password\s+manager\s+$'
+    remediation: "Set a strong manager password: password manager <password>"
+
+  - id: ARUBA-SNMP-001
+    generic_id: SNMP-001
+    title: "Default SNMP community strings must not be used"
+    severity: critical
+    cis:
+      - {benchmark: "CIS HPE Aruba", control: "3.1.1", level: 1}
+    probe:
+      type: forbidden_regex
+      pattern: '(?m)^\s*snmp-server\s+community\s+(public|private)\b'
+    remediation: "Change default SNMP community strings."
+
+  - id: ARUBA-LOG-001
+    generic_id: LOG-001
+    title: "Remote syslog must be configured"
+    severity: high
+    cis:
+      - {benchmark: "CIS HPE Aruba", control: "4.1.1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*logging\s+\d{1,3}\.\d{1,3}'
+    remediation: "Configure: logging <syslog-ip>"
+
+  - id: ARUBA-TIME-001
+    generic_id: TIME-001
+    title: "NTP server must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "CIS HPE Aruba", control: "5.1.1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*(sntp|ntp)\s+server\s+'
+    remediation: "Configure: timesync ntp; ntp server <ip>"
+
+  - id: ARUBA-POLICY-001
+    generic_id: POLICY-001
+    title: "Permit any-any ACL entries must not exist"
+    severity: critical
+    cis:
+      - {benchmark: "CIS HPE Aruba", control: "6.1.1", level: 1}
+    probe:
+      type: forbidden_regex
+      pattern: '(?m)^\s*permit\s+(ip|tcp|udp|any)\s+any\s+any'
+    remediation: "Replace any-any rules with least-privilege entries."

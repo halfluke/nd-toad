@@ -1,0 +1,95 @@
+# Nokia SR Linux security checks — supports JSON export and flat CLI set format
+# JSON: probes run on pretty-printed JSON text
+# Flat CLI: probes run on raw "set / ..." lines
+profile: nokia_srl
+
+checks:
+
+  - id: SRL-MGMT-001
+    generic_id: MGMT-001
+    title: "Only SSH must be enabled for management access"
+    severity: high
+    cis:
+      - {benchmark: "Nokia SR Linux Hardening", control: "1.1.1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '("ssh-server"|set / system ssh-server)'
+    remediation: "Enable SSH server under /system/ssh-server and disable all cleartext transports."
+
+  - id: SRL-MGMT-002
+    generic_id: MGMT-005
+    title: "Session idle timeout must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "Nokia SR Linux Hardening", control: "1.2.1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '("timeout"\s*:\s*[1-9]|set / system management timeout\s+[1-9])'
+    remediation: "Set idle timeout under /system/management: timeout 600 (seconds)."
+
+  - id: SRL-AAA-001
+    generic_id: AAA-001
+    title: "RADIUS or TACACS+ authentication must be configured"
+    severity: high
+    cis:
+      - {benchmark: "Nokia SR Linux Hardening", control: "2.1.1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '("server-group"\s*:\s*\[|set / system aaa (radius|tacacs))'
+    remediation: "Configure RADIUS/TACACS+ server group under /system/aaa."
+
+  - id: SRL-LOG-001
+    generic_id: LOG-001
+    title: "Remote syslog must be configured"
+    severity: high
+    cis:
+      - {benchmark: "Nokia SR Linux Hardening", control: "3.1.1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '("remote-server"|set / system logging remote-server)'
+    remediation: "Configure remote syslog under /system/logging/remote-server."
+
+  - id: SRL-TIME-001
+    generic_id: TIME-001
+    title: "NTP must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "Nokia SR Linux Hardening", control: "4.1.1", level: 1}
+    probe:
+      type: required_regex
+      # JSON export: "ntp": { ... }
+      # Set format:  set / system ntp ...
+      # Info/tree format (no quotes or colons): ntp { admin-state enable ... }
+      pattern: '("ntp"\s*:|^\s*ntp\s*\{|set / system ntp)'
+    remediation: "Configure NTP under /system/ntp."
+
+  - id: SRL-SNMP-001
+    generic_id: SNMP-001
+    title: "If SNMP is enabled, SNMPv3 must be used"
+    severity: high
+    cis:
+      - {benchmark: "Nokia SR Linux Hardening", control: "5.1.1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '("snmp"\s*:.*"version"\s*:\s*"(v3|V3)"|set / system snmp.*v3)'
+    remediation: "Configure SNMPv3 only under /system/snmp."
+
+  - id: SRL-POLICY-001
+    generic_id: POLICY-001
+    title: "ACL filters must not permit any-to-any"
+    severity: critical
+    cis:
+      - {benchmark: "Nokia SR Linux Hardening", control: "6.1.1", level: 1}
+    probe:
+      type: manual
+    remediation: "Review all entries under /acl/ipv4-filter and /acl/ipv6-filter. Verify no unconditional accept entry exists."
+
+  - id: SRL-AUTH-001
+    generic_id: AUTH-001
+    title: "Default local users must be reviewed and disabled if not required"
+    severity: high
+    cis:
+      - {benchmark: "Nokia SR Linux Hardening", control: "2.2.1", level: 1}
+    probe:
+      type: manual
+    remediation: "Review /system/aaa/authentication/local-users. Disable or delete accounts not required."

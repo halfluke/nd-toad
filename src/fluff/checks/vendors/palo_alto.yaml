@@ -1,0 +1,168 @@
+# Palo Alto Networks PAN-OS security checks — CIS Palo Alto Firewall 11 L1 mapping
+# Input: XML config export. Probes use regex on serialized XML text.
+profile: palo_alto
+
+checks:
+
+  - id: PAN-MGMT-001
+    generic_id: MGMT-001
+    title: "Telnet must not be permitted on management interface"
+    severity: critical
+    cis:
+      - {benchmark: "CIS Palo Alto Firewall 11", control: "1.1.1", level: 1}
+    probe:
+      type: forbidden_regex
+      # PAN-OS XML: <telnet>yes</telnet> appears under <mgt-config><service> (device management
+      # services) or inside interface management profiles — never inside <permitted-ip> (which is
+      # only the source-IP allowlist). A simple tag match covers both locations unambiguously.
+      pattern: '(?i)<telnet>yes</telnet>'
+    remediation: "In Device > Setup > Management > Services: disable Telnet."
+
+  - id: PAN-MGMT-002
+    generic_id: MGMT-002
+    title: "HTTP management access must be disabled"
+    severity: high
+    cis:
+      - {benchmark: "CIS Palo Alto Firewall 11", control: "1.1.2", level: 1}
+    probe:
+      type: forbidden_regex
+      # PAN-OS XML: device-level HTTP setting lives under <mgt-config><service><http>, not inside
+      # a <management> wrapper. Interface management profiles also embed <http>yes. Matching the
+      # tag directly covers both contexts without an incorrect path assumption.
+      pattern: '(?i)<http>yes</http>'
+    remediation: "In Device > Setup > Management > Services: uncheck HTTP."
+
+  - id: PAN-MGMT-003
+    generic_id: MGMT-005
+    title: "Management session idle timeout must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Palo Alto Firewall 11", control: "1.2.1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)<idle-timeout>[1-9]\d*</idle-timeout>'
+    remediation: "In Device > Setup > Management: set idle-timeout to 10 (minutes)."
+
+  - id: PAN-MGMT-004
+    generic_id: AAA-002
+    title: "Login banner must be configured"
+    severity: low
+    cis:
+      - {benchmark: "CIS Palo Alto Firewall 11", control: "1.3.1", level: 1}
+    probe:
+      type: required_regex
+      # (?ms): (?m) makes ^ and $ match line boundaries; (?s) makes . match newlines
+      pattern: '(?ms)<motd>.*?</motd>'
+    remediation: "In Device > Setup > Management: configure Login Banner (MOTD)."
+
+  - id: PAN-MGMT-005
+    generic_id: MGMT-004
+    title: "Management interface must restrict access by source IP"
+    severity: high
+    cis:
+      - {benchmark: "CIS Palo Alto Firewall 11", control: "1.4.1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?ms)<permitted-ip>.*?<entry name='
+    remediation: "In management profile: configure Permitted IPs to restrict management access."
+
+  - id: PAN-AAA-001
+    generic_id: AAA-001
+    title: "External authentication (RADIUS/LDAP/SAML) or MFA must be configured for admin access"
+    severity: high
+    cis:
+      - {benchmark: "CIS Palo Alto Firewall 11", control: "2.1.1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?ms)<authentication-profile>.*?</authentication-profile>'
+    remediation: "In Device > Authentication Profile: configure RADIUS/LDAP/SAML; bind to admin accounts."
+
+  - id: PAN-AUTH-001
+    generic_id: AUTH-001
+    title: "Admin accounts must not use superuser without MFA"
+    severity: critical
+    cis:
+      - {benchmark: "CIS Palo Alto Firewall 11", control: "2.2.1", level: 1}
+    probe:
+      type: manual
+    remediation: "Verify Device > Administrators: all superuser accounts must have authentication profile with MFA."
+
+  - id: PAN-AUTH-002
+    generic_id: AUTH-002
+    title: "Password complexity must be enforced via password profile"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Palo Alto Firewall 11", control: "2.2.2", level: 1}
+    probe:
+      type: required_regex
+      # Accept both per-admin <password-profile> objects and the global <password-complexity>
+      # system setting — both enforce password complexity on PAN-OS.
+      pattern: '(?ms)(<password-profile>.*?</password-profile>|<password-complexity>.*?</password-complexity>)'
+    remediation: "In Device > Password Profiles: configure minimum length ≥14 and complexity requirements; or enable global password complexity under Device > Setup > Management."
+
+  - id: PAN-SNMP-001
+    generic_id: SNMP-001
+    title: "SNMPv3 must be used with authPriv security level"
+    severity: high
+    cis:
+      - {benchmark: "CIS Palo Alto Firewall 11", control: "3.1.1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?ms)<snmp-setting>.*?<v3>.*?</v3>'
+    remediation: "Configure SNMPv3 in Device > Setup > Operations > SNMP Setup."
+
+  - id: PAN-LOG-001
+    generic_id: LOG-001
+    title: "Syslog forwarding profile must be configured"
+    severity: high
+    cis:
+      - {benchmark: "CIS Palo Alto Firewall 11", control: "4.1.1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?ms)<syslog>.*?<entry name='
+    remediation: "In Device > Server Profiles > Syslog: add a syslog server and bind it to a log forwarding profile."
+
+  - id: PAN-TIME-001
+    generic_id: TIME-001
+    title: "NTP servers must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Palo Alto Firewall 11", control: "5.1.1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?ms)<ntp-servers>.*?<primary-ntp-server>'
+    remediation: "In Device > Setup > Services: configure Primary and Secondary NTP servers."
+
+  - id: PAN-POLICY-001
+    generic_id: POLICY-001
+    title: "Security rules must not permit any-any traffic"
+    description: "A rule with source=any and destination=any and action=allow is unrestricted. Deny/drop any-any catch-all rules are acceptable."
+    severity: critical
+    cis:
+      - {benchmark: "CIS Palo Alto Firewall 11", control: "6.1.1", level: 1}
+    probe:
+      type: hook
+      module: fluff.hooks.panos_policy
+      func: check_any_any_allow
+    remediation: "Replace any-any allow rules with specific source/destination address groups."
+
+  - id: PAN-POLICY-002
+    generic_id: POLICY-002
+    title: "Security rules should have an Application specified (not 'any')"
+    description: "Rules with application=any bypass application identification."
+    severity: medium
+    cis:
+      - {benchmark: "CIS Palo Alto Firewall 11", control: "6.1.2", level: 1}
+    probe:
+      type: manual
+    remediation: "Review rules with application=any; replace with specific application identifiers where possible."
+
+  - id: PAN-POLICY-003
+    generic_id: POLICY-003
+    title: "WildFire inline cloud analysis should be enabled on allowed traffic"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Palo Alto Firewall 11", control: "6.2.1", level: 1}
+    probe:
+      type: manual
+    remediation: "Verify WildFire analysis profile is attached to security policies via Security Profiles."

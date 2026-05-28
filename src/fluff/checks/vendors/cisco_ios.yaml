@@ -1,0 +1,384 @@
+# Cisco IOS / IOS-XE security checks — CIS Cisco IOS 17 Benchmark L1 mapping
+# ~20 automated checks + manual entries emitted from cis_catalog.yaml
+profile: cisco_ios
+
+checks:
+
+  # ── Unused & dangerous services ──────────────────────────────────────────
+
+  - id: IOS-SVC-001
+    generic_id: SVC-001
+    title: "TCP small servers must be disabled"
+    description: "Legacy diagnostic services expose the device to reconnaissance and amplification attacks."
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "2.1.1", level: 1}
+    probe:
+      type: forbidden_regex
+      pattern: '(?m)^\s*service\s+tcp-small-servers'
+    remediation: "Add: no service tcp-small-servers"
+
+  - id: IOS-SVC-002
+    generic_id: SVC-002
+    title: "UDP small servers must be disabled"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "2.1.2", level: 1}
+    probe:
+      type: forbidden_regex
+      pattern: '(?m)^\s*service\s+udp-small-servers'
+    remediation: "Add: no service udp-small-servers"
+
+  - id: IOS-SVC-003
+    generic_id: SVC-003
+    title: "IP finger service must be disabled"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "2.1.3", level: 1}
+    probe:
+      type: forbidden_regex
+      pattern: '(?m)^\s*ip\s+finger'
+    remediation: "Add: no ip finger"
+
+  - id: IOS-SVC-004
+    generic_id: SVC-004
+    title: "IP BOOTP server must be disabled"
+    severity: low
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "2.1.4", level: 1}
+    probe:
+      type: forbidden_regex
+      pattern: '(?m)^\s*ip\s+bootp\s+server'
+    remediation: "Add: no ip bootp server"
+
+  - id: IOS-SVC-005
+    generic_id: SVC-005
+    title: "IP source-routing must be disabled"
+    description: "Source routing allows attackers to control packet path, bypassing security controls."
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "2.1.5", level: 1}
+    probe:
+      type: required_regex
+      # ip source-route is ON by default on Cisco IOS. A default or unconfigured device
+      # does NOT print 'ip source-route' in running-config — it's implicit. Only the
+      # hardened state produces an explicit 'no ip source-route' line, so we require it.
+      pattern: '(?m)^\s*no\s+ip\s+source-route'
+    remediation: "Add: no ip source-route"
+
+  - id: IOS-SVC-006
+    generic_id: SVC-006
+    title: "Service PAD must be disabled"
+    severity: low
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "2.1.6", level: 1}
+    probe:
+      type: forbidden_regex
+      pattern: '(?m)^\s*service\s+pad'
+    remediation: "Add: no service pad"
+
+  - id: IOS-SVC-007
+    generic_id: SVC-007
+    title: "CDP must be disabled globally or justified by business need"
+    description: "CDP advertises device details to neighbours; disable globally when not required."
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "2.1.7", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*no\s+cdp\s+run'
+    remediation: "Add: no cdp run (or disable per-interface where CDP is not needed)"
+
+  # ── HTTP management ───────────────────────────────────────────────────────
+
+  - id: IOS-MGMT-001
+    generic_id: MGMT-002
+    title: "HTTP server must be disabled or restricted to management ACL"
+    description: "The HTTP server exposes configuration over cleartext. Disable it or restrict with an ACL."
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "2.2.1", level: 1}
+    probe:
+      type: forbidden_regex
+      pattern: '(?m)^\s*ip\s+http\s+server\b'
+    remediation: "Add: no ip http server. If HTTPS required, use: ip http secure-server with an access-class."
+
+  - id: IOS-MGMT-002
+    generic_id: MGMT-002b
+    title: "HTTP secure-server should use a management access-class"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "2.2.2", level: 1}
+    probe:
+      type: hook
+      module: fluff.hooks.mgmt_acl
+      func: check_ios_http_access_class
+      # The hook only requires 'ip http access-class' when 'ip http server' or
+      # 'ip http secure-server' is actually running. A required_regex would
+      # falsely fail routing-only configs where HTTP management is fully disabled.
+    remediation: "Configure: ip http access-class <acl> (restrict HTTPS management source)"
+
+  # ── Telnet / SSH ──────────────────────────────────────────────────────────
+
+  - id: IOS-MGMT-003
+    generic_id: MGMT-001
+    title: "Telnet must not be permitted on VTY lines"
+    description: "Telnet transmits credentials and data in cleartext. SSH must be the sole transport."
+    severity: critical
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "3.1.1", level: 1}
+    probe:
+      type: required_regex
+      # Cisco IOS VTY default is 'transport input all' (telnet + ssh + others).
+      # When no 'transport input' statement exists, the default-on-all behavior means
+      # telnet IS accessible — a forbidden_regex check sees nothing and silently passes.
+      # Require the explicit safe form; 'none' (no VTY access at all) is equally secure.
+      # The \s*$ anchor prevents 'transport input ssh telnet' (still allows telnet)
+      # from incorrectly passing this check.
+      pattern: '(?m)^\s*transport\s+input\s+(ssh|none)\s*$'
+      scope: "^line vty"
+    remediation: "Under each 'line vty' block: transport input ssh"
+
+  - id: IOS-MGMT-004
+    generic_id: MGMT-003
+    title: "SSH version 2 must be configured"
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "3.1.2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*ip\s+ssh\s+version\s+2'
+    remediation: "Configure: ip ssh version 2"
+
+  - id: IOS-MGMT-005
+    generic_id: MGMT-005
+    title: "VTY lines must have an exec-timeout configured"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "3.1.3", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*exec-timeout\s+[1-9]'
+      scope: "^line vty"
+    remediation: "Under each 'line vty' block: exec-timeout 10 0 (or shorter)"
+
+  - id: IOS-MGMT-006
+    generic_id: MGMT-005b
+    title: "Console line must have exec-timeout configured"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "3.2.1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*exec-timeout\s+[1-9]'
+      scope: "^line con"
+    remediation: "Under 'line con 0': exec-timeout 10 0"
+
+  - id: IOS-MGMT-007
+    generic_id: MGMT-004
+    title: "VTY lines must restrict access via access-class"
+    description: "An ACL on VTY lines limits management access to authorised management stations."
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "3.1.4", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*access-class\s+\S+\s+in'
+      scope: "^line vty"
+    remediation: "Under each 'line vty' block: access-class <mgmt-acl> in"
+
+  # ── Login banner ──────────────────────────────────────────────────────────
+
+  - id: IOS-MGMT-008
+    generic_id: AAA-002
+    title: "Login banner must be configured"
+    description: "A warning banner establishes legal notice and deters unauthorised access."
+    severity: low
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "3.3.1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*banner\s+(login|motd)\s+'
+    remediation: "Configure: banner login ^C <your legal notice> ^C"
+
+  # ── AAA ───────────────────────────────────────────────────────────────────
+
+  - id: IOS-AAA-001
+    generic_id: AAA-001
+    title: "AAA new-model must be enabled"
+    description: "aaa new-model is required before any AAA policies take effect."
+    severity: critical
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "1.1.1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*aaa\s+new-model'
+    remediation: "Configure: aaa new-model"
+
+  - id: IOS-AAA-002
+    generic_id: AAA-001b
+    title: "AAA authentication must be configured for login"
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "1.1.2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*aaa\s+authentication\s+login\s+\S+'
+    remediation: "Configure: aaa authentication login default group radius local (or similar)"
+
+  - id: IOS-AAA-003
+    generic_id: AAA-001c
+    title: "AAA authentication must be configured for enable"
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "1.1.3", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*aaa\s+authentication\s+enable\s+default'
+    remediation: "Configure: aaa authentication enable default enable"
+
+  # ── Credentials & passwords ───────────────────────────────────────────────
+
+  - id: IOS-AUTH-001
+    generic_id: AUTH-001
+    title: "enable secret must be configured (not enable password)"
+    description: "enable secret uses a strong hash; enable password is MD5 or cleartext — reject both alone."
+    severity: critical
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "1.2.1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*enable\s+secret\s+'
+    remediation: "Configure: enable secret <strong-password>"
+
+  - id: IOS-AUTH-002
+    generic_id: AUTH-002
+    title: "service password-encryption must be enabled"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "1.2.2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*service\s+password-encryption'
+    remediation: "Configure: service password-encryption"
+
+  - id: IOS-AUTH-003
+    generic_id: AUTH-003
+    title: "Usernames must use 'secret' not 'password'"
+    description: "username … password stores a reversible or weakly hashed credential."
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "1.2.3", level: 1}
+    probe:
+      type: forbidden_regex
+      pattern: '(?m)^\s*username\s+\S+\s+password\s+'
+    remediation: "Replace all 'username X password' with 'username X secret'"
+
+  - id: IOS-AUTH-004
+    generic_id: AUTH-004
+    title: "Minimum password length should be enforced"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "1.2.4", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*security\s+passwords\s+min-length\s+\d+'
+    remediation: "Configure: security passwords min-length 14"
+
+  # ── SNMP ──────────────────────────────────────────────────────────────────
+
+  - id: IOS-SNMP-001
+    generic_id: SNMP-001
+    title: "Default SNMP community strings (public/private) must not be used"
+    description: "Well-known community strings allow unauthenticated read or write access."
+    severity: critical
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "4.1.1", level: 1}
+    probe:
+      type: forbidden_regex
+      pattern: '(?m)^\s*snmp-server\s+community\s+(public|private)\b'
+    remediation: "Replace default SNMP community strings with unique, strong values."
+
+  - id: IOS-SNMP-002
+    generic_id: SNMP-002
+    title: "SNMP community strings must be restricted by ACL"
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "4.1.2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*snmp-server\s+community\s+\S+\s+(RO|RW)\s+\S+'
+    remediation: "Append an ACL to each 'snmp-server community' statement: snmp-server community X RO <acl>"
+
+  # ── Logging ───────────────────────────────────────────────────────────────
+
+  - id: IOS-LOG-001
+    generic_id: LOG-001
+    title: "Logging must be enabled"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "5.1.1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*logging\s+(on|buffered|host)'
+    remediation: "Configure: logging on; logging buffered 65536; logging host <syslog-ip>"
+
+  - id: IOS-LOG-002
+    generic_id: LOG-001b
+    title: "Log timestamps must be configured"
+    severity: low
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "5.1.2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*service\s+timestamps\s+(log|debug)\s+datetime'
+    remediation: "Configure: service timestamps log datetime msec localtime show-timezone"
+
+  - id: IOS-LOG-003
+    generic_id: LOG-002
+    title: "Remote syslog server must be configured"
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "5.1.3", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*logging\s+host\s+'
+    remediation: "Configure: logging host <syslog-server-ip>"
+
+  # ── NTP ───────────────────────────────────────────────────────────────────
+
+  - id: IOS-TIME-001
+    generic_id: TIME-001
+    title: "NTP server must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "6.1.1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*ntp\s+server\s+'
+    remediation: "Configure: ntp server <ntp-server-ip>"
+
+  - id: IOS-TIME-002
+    generic_id: TIME-002
+    title: "NTP authentication must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "6.1.2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*ntp\s+authenticate'
+    remediation: "Configure: ntp authenticate; ntp authentication-key <id> md5 <key>; ntp trusted-key <id>"
+
+  # ── Policy / ACL ──────────────────────────────────────────────────────────
+
+  - id: IOS-POLICY-001
+    generic_id: POLICY-001
+    title: "Permit any-any ACL entries must not exist"
+    description: "A 'permit ip any any' or equivalent rule grants unrestricted transit access."
+    severity: critical
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "7.1.1", level: 1}
+    probe:
+      type: forbidden_regex
+      pattern: '(?m)^\s*permit\s+ip\s+any\s+any'
+    remediation: "Replace 'permit ip any any' with least-privilege ACL entries."

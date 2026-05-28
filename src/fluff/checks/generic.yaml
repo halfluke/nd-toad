@@ -1,0 +1,94 @@
+# Generic check ID registry
+# Maps stable cross-vendor IDs to human-readable descriptions.
+# Vendor YAML files reference these via the generic_id field.
+#
+# This file is documentation only — it is not loaded by the engine.
+
+checks:
+  - id: MGMT-001
+    title: "Cleartext management (telnet) must be disabled"
+    category: management
+
+  - id: MGMT-002
+    title: "HTTP management access must be disabled or restricted"
+    category: management
+
+  - id: MGMT-003
+    title: "SSH must be the primary management transport (version 2)"
+    category: management
+
+  - id: MGMT-004
+    title: "Management access must be restricted by source IP"
+    category: management
+
+  - id: MGMT-005
+    title: "Management session idle timeout must be configured"
+    category: management
+
+  - id: AAA-001
+    title: "Centralised AAA / authentication must be enabled"
+    category: authentication
+
+  - id: AAA-002
+    title: "Login warning banner must be configured"
+    category: authentication
+
+  - id: AUTH-001
+    title: "Privileged accounts must use strong credential storage"
+    category: authentication
+
+  - id: AUTH-002
+    title: "Password complexity and minimum length must be enforced"
+    category: authentication
+
+  - id: AUTH-003
+    title: "User accounts must not store credentials in reversible form"
+    category: authentication
+
+  - id: AUTH-004
+    title: "Minimum password length must be enforced globally"
+    category: authentication
+
+  - id: SNMP-001
+    title: "Default SNMP community strings must not be present"
+    category: protocols
+
+  - id: SNMP-002
+    title: "SNMP access must be restricted by ACL / allowed-hosts"
+    category: protocols
+
+  - id: LOG-001
+    title: "Remote syslog must be configured"
+    category: logging
+
+  - id: LOG-002
+    title: "Log timestamps must be enabled"
+    category: logging
+
+  - id: TIME-001
+    title: "NTP server must be configured"
+    category: time
+
+  - id: TIME-002
+    title: "NTP authentication must be enabled"
+    category: time
+
+  - id: SVC-001
+    title: "Unnecessary/dangerous services must be disabled"
+    category: services
+
+  - id: POLICY-001
+    title: "Any-to-any permit rules must not exist"
+    category: policy
+
+  - id: POLICY-002
+    title: "Management traffic must be filtered by direction"
+    category: policy
+
+  - id: POLICY-003
+    title: "Security inspection (IPS/AV) must be applied to permitted traffic"
+    category: policy
+
+  - id: MANUAL
+    title: "Manual review required"
+    category: manual

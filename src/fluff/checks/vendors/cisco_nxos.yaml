@@ -1,0 +1,171 @@
+# Cisco NX-OS security checks — CIS Cisco NX-OS Benchmark L1 mapping
+profile: cisco_nxos
+
+checks:
+
+  - id: NXOS-MGMT-001
+    generic_id: MGMT-001
+    title: "Telnet must not be enabled"
+    description: "NX-OS disables telnet by default; confirm feature telnet is not enabled."
+    severity: critical
+    cis:
+      - {benchmark: "CIS Cisco NX-OS", control: "1.1.1", level: 1}
+    probe:
+      type: forbidden_regex
+      pattern: '(?m)^\s*feature\s+telnet'
+    remediation: "Remove 'feature telnet' from the configuration."
+
+  - id: NXOS-MGMT-002
+    generic_id: MGMT-003
+    title: "SSH must be enabled and version 2 enforced"
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco NX-OS", control: "1.1.2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*feature\s+ssh'
+    remediation: "Enable: feature ssh  (NX-OS uses SSHv2 by default once enabled)"
+
+  - id: NXOS-MGMT-003
+    generic_id: MGMT-002
+    title: "HTTP server should be disabled"
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco NX-OS", control: "1.1.3", level: 1}
+    probe:
+      type: forbidden_regex
+      pattern: '(?m)^\s*feature\s+http-server'
+    remediation: "Remove 'feature http-server'; use HTTPS via 'feature nxapi' with https-only."
+
+  - id: NXOS-MGMT-004
+    generic_id: MGMT-005
+    title: "VTY exec-timeout must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco NX-OS", control: "1.2.1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*exec-timeout\s+[1-9]'
+      scope: "^line vty"
+    remediation: "Under 'line vty': exec-timeout 10 0"
+
+  - id: NXOS-MGMT-005
+    generic_id: AAA-002
+    title: "Login banner must be configured"
+    severity: low
+    cis:
+      - {benchmark: "CIS Cisco NX-OS", control: "1.3.1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*banner\s+(motd|login)\s+'
+    remediation: "Configure: banner motd # <legal notice> #"
+
+  - id: NXOS-AAA-001
+    generic_id: AAA-001
+    title: "AAA must be enabled"
+    severity: critical
+    cis:
+      - {benchmark: "CIS Cisco NX-OS", control: "2.1.1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*aaa\s+authentication\s+login'
+    remediation: "Configure AAA: aaa authentication login default group tacacs+ local"
+
+  - id: NXOS-AUTH-001
+    generic_id: AUTH-001
+    title: "All user accounts must use strong password hashing"
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco NX-OS", control: "2.2.1", level: 1}
+    probe:
+      type: forbidden_regex
+      pattern: '(?m)^\s*username\s+\S+\s+password\s+0\s+'
+    remediation: "Use typed-5 or typed-8/9 password hashing. No cleartext passwords (type 0)."
+
+  - id: NXOS-AUTH-002
+    generic_id: AUTH-002
+    title: "Password strength policy must be enforced"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco NX-OS", control: "2.2.2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*password\s+strength-check'
+    remediation: "Configure: password strength-check"
+
+  - id: NXOS-SNMP-001
+    generic_id: SNMP-001
+    title: "Default SNMP community strings must not be used"
+    severity: critical
+    cis:
+      - {benchmark: "CIS Cisco NX-OS", control: "3.1.1", level: 1}
+    probe:
+      type: forbidden_regex
+      pattern: '(?m)^\s*snmp-server\s+community\s+(public|private)\b'
+    remediation: "Change SNMP community strings from default values."
+
+  - id: NXOS-SNMP-002
+    generic_id: SNMP-002
+    title: "SNMPv3 must be used"
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco NX-OS", control: "3.1.2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*snmp-server\s+user\s+'
+    remediation: "Configure SNMPv3 users: snmp-server user <name> <group> v3 auth sha <key> priv aes-128 <key>"
+
+  - id: NXOS-LOG-001
+    generic_id: LOG-001
+    title: "Remote syslog must be configured"
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco NX-OS", control: "4.1.1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*logging\s+server\s+'
+    remediation: "Configure: logging server <syslog-ip> 6 use-vrf management"
+
+  - id: NXOS-LOG-002
+    generic_id: LOG-001b
+    title: "Log timestamps must be configured"
+    severity: low
+    cis:
+      - {benchmark: "CIS Cisco NX-OS", control: "4.1.2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*logging\s+timestamp\s+'
+    remediation: "Configure: logging timestamp milliseconds"
+
+  - id: NXOS-TIME-001
+    generic_id: TIME-001
+    title: "NTP server must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco NX-OS", control: "5.1.1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*ntp\s+server\s+'
+    remediation: "Configure: ntp server <ip> use-vrf management"
+
+  - id: NXOS-POLICY-001
+    generic_id: POLICY-001
+    title: "Permit any-any ACL entries must not exist"
+    severity: critical
+    cis:
+      - {benchmark: "CIS Cisco NX-OS", control: "6.1.1", level: 1}
+    probe:
+      type: forbidden_regex
+      pattern: '(?m)^\s*permit\s+ip\s+any\s+any'
+    remediation: "Replace any-any rules with least-privilege ACL entries."
+
+  - id: NXOS-SVC-001
+    generic_id: SVC-001
+    title: "Unused features must not be enabled"
+    description: "Each enabled NX-OS feature expands the attack surface. Review and disable unused ones."
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco NX-OS", control: "7.1.1", level: 1}
+    probe:
+      type: manual
+    remediation: "Audit: show feature | grep enabled — disable any feature not required."

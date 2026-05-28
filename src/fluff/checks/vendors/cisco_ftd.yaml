@@ -1,0 +1,129 @@
+# Cisco FTD / Firepower security checks
+# Covers FDM-managed devices (ASA-shaped CLI) and notes FMC-only controls as manual.
+profile: cisco_ftd
+
+checks:
+
+  - id: FTD-MGMT-001
+    generic_id: MGMT-001
+    title: "Telnet must not be used for management"
+    severity: critical
+    cis:
+      - {benchmark: "CIS Cisco Firepower", control: "1.1.1", level: 1}
+    probe:
+      type: forbidden_regex
+      pattern: '(?m)^\s*telnet\s+\d'
+    remediation: "Remove all telnet management statements. Use SSH or HTTPS only."
+
+  - id: FTD-MGMT-002
+    generic_id: MGMT-003
+    title: "SSH version 2 must be configured"
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco Firepower", control: "1.1.2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*ssh\s+version\s+2'
+    remediation: "Configure: ssh version 2"
+
+  - id: FTD-MGMT-003
+    generic_id: MGMT-002
+    title: "HTTPS management must not permit unrestricted source access"
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco Firepower", control: "1.1.3", level: 1}
+    probe:
+      type: forbidden_regex
+      # 'http server enable' is required for FDM/ASDM — the real risk is unrestricted
+      # access via 'http 0.0.0.0 0.0.0.0 <iface>'. Restricted subnet ACLs are acceptable.
+      pattern: '(?m)^\s*http\s+0\.0\.0\.0\s+0\.0\.0\.0\s+\S+'
+    remediation: "Replace 'http 0.0.0.0 0.0.0.0 <iface>' with a specific management subnet: 'http <mgmt-net> <mask> <iface>'"
+
+  - id: FTD-AAA-001
+    generic_id: AAA-001
+    title: "AAA authentication must be configured for SSH access"
+    severity: critical
+    cis:
+      - {benchmark: "CIS Cisco Firepower", control: "2.1.1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*aaa\s+authentication\s+ssh\s+console'
+    remediation: "Configure: aaa authentication ssh console LOCAL"
+
+  - id: FTD-SNMP-001
+    generic_id: SNMP-001
+    title: "Default SNMP community strings must not be used"
+    severity: critical
+    cis:
+      - {benchmark: "CIS Cisco Firepower", control: "3.1.1", level: 1}
+    probe:
+      type: forbidden_regex
+      pattern: '(?m)^\s*snmp-server\s+community\s+(public|private)\b'
+    remediation: "Replace default SNMP community strings."
+
+  - id: FTD-LOG-001
+    generic_id: LOG-001
+    title: "Logging must be enabled"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco Firepower", control: "4.1.1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*logging\s+enable'
+    remediation: "Configure: logging enable"
+
+  - id: FTD-LOG-002
+    generic_id: LOG-002
+    title: "Remote syslog must be configured"
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco Firepower", control: "4.1.2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*logging\s+host\s+'
+    remediation: "Configure: logging host <iface> <syslog-ip>"
+
+  - id: FTD-POLICY-001
+    generic_id: POLICY-001
+    title: "Permit any-any rules must not exist in access policy"
+    severity: critical
+    cis:
+      - {benchmark: "CIS Cisco Firepower", control: "5.1.1", level: 1}
+    probe:
+      type: forbidden_regex
+      # FTD LINA format uses 'any4' instead of 'any'; pattern covers both
+      pattern: '(?m)\bpermit\s+(ip|tcp|udp)\s+any4?\s+any4?\b'
+    remediation: "Remove any-any permit rules from access control policies."
+
+  - id: FTD-FMC-001
+    generic_id: POLICY-003
+    title: "Intrusion Prevention System (IPS) policy must be enabled on all rules"
+    description: "FMC-only: verify IPS inspection is bound to the access control policy. Cannot be verified from CLI config alone."
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco Firepower", control: "5.2.1", level: 1}
+    probe:
+      type: manual
+    remediation: "In FMC: Access Control Policy → verify IPS policy is set on each allow rule."
+
+  - id: FTD-FMC-002
+    generic_id: POLICY-004
+    title: "File inspection policy must be enabled"
+    description: "FMC-only: requires manual verification of file/malware inspection binding."
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco Firepower", control: "5.3.1", level: 1}
+    probe:
+      type: manual
+    remediation: "In FMC: Access Control Policy → File Policy must be assigned to applicable rules."
+
+  - id: FTD-TIME-001
+    generic_id: TIME-001
+    title: "NTP must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco Firepower", control: "6.1.1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*ntp\s+server\s+'
+    remediation: "Configure: ntp server <ip>"

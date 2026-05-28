@@ -1,0 +1,202 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Sophos XG/XGS Firewall — synthetic Entities.xml sample
+  Root element and tag names confirmed from the official Sophos sources:
+
+  Root format confirmed from:
+    - Community post (community.sophos.com): xgImpExBegin() returns
+      ET.Element('Configuration', APIVersion="1702.1", IPS_CAT_VER="1")
+    - Sophos community VLAN migration article shows <Configuration APIVersion="1805.2">
+
+  XML tag names confirmed from:
+    - sophos/sophos-firewall-sdk (Apache 2.0, github.com/sophos/sophos-firewall-sdk)
+    - sophos/sophosfirewall-ansible (GPL-3.0, github.com/sophos/sophosfirewall-ansible)
+
+  AdminSettings XML structure:
+    sdk: admin.py update_webadmin_settings(), update_hostname_settings()
+    → <AdminSettings><WebAdminSettings><HTTPSport>
+    → <AdminSettings><LoginSecurity><LogoutSession>
+
+  SyslogServers XML:
+    ansible: sfos_syslog.py template
+    → <SyslogServers><Name>, <ServerAddress>, <Port>
+
+  FirewallRule XML:
+    sdk: templates/createfwrule.j2
+    → <FirewallRule><NetworkPolicy><Action>, <IntrusionPrevention>, <LogTraffic>
+
+  Time/NTP XML:
+    ansible: sfos_time.py uses xml_tag="Time"
+    → <Time> is the container; NTP uses <NTPServerList><NTPServer1> nesting
+
+  SNMP XML:
+    ansible: sfos_snmp_agent.py — xml_tag="SNMPAgent" (inferred from module name)
+
+  This file exercises the Entities.xml Import-Export format:
+  System → Backup & firmware → Import export → exports API-XXXXXX.tar → Entities.xml
+  The .tar is NOT encrypted (unlike the full Backup which encrypts with AES-256).
+
+  Note: The .tar backup (Backup & firmware → Backup) IS encrypted.
+  Only the Import-Export functionality produces plain Entities.xml.
+-->
+<Configuration APIVersion="2000.1" IPS_CAT_VER="52">
+
+  <!-- ===== Admin and user settings (System > Administration) ===== -->
+  <AdminSettings transactionid="">
+    <HostnameSettings>
+      <HostName>SOPHOS-XGS-FW01</HostName>
+      <HostNameDesc>HQ Perimeter Firewall</HostNameDesc>
+    </HostnameSettings>
+    <WebAdminSettings>
+      <Certificate>ApplianceCertificate</Certificate>
+      <HTTPSport>4444</HTTPSport>
+      <UserPortalHTTPSPort>8443</UserPortalHTTPSPort>
+      <VPNPortalHTTPSPort>8444</VPNPortalHTTPSPort>
+    </WebAdminSettings>
+    <LoginSecurity>
+      <LogoutSession>10</LogoutSession>
+      <BlockLogin>Enable</BlockLogin>
+      <BlockLoginSettings>
+        <UnsuccessfulAttempt>3</UnsuccessfulAttempt>
+        <Duration>10</Duration>
+        <Minutes>30</Minutes>
+      </BlockLoginSettings>
+    </LoginSecurity>
+    <PasswordComplexitySettings>
+      <PasswordComplexityCheck>Enable</PasswordComplexityCheck>
+      <MinimumPasswordLength>12</MinimumPasswordLength>
+      <IncludeUppercase>Enable</IncludeUppercase>
+      <IncludeLowercase>Enable</IncludeLowercase>
+      <IncludeNumber>Enable</IncludeNumber>
+      <IncludeSpecialCharacter>Enable</IncludeSpecialCharacter>
+    </PasswordComplexitySettings>
+  </AdminSettings>
+
+  <!-- ===== SNMP Agent (System > Administration > SNMP) ===== -->
+  <SNMPAgent transactionid="">
+    <Enabled>true</Enabled>
+    <Name>SOPHOS-XGS-FW01</Name>
+    <Description>HQ Perimeter Firewall SNMP Agent</Description>
+    <Location>HQ-DataCenter-Rack3</Location>
+    <ContactPerson>noc@example.com</ContactPerson>
+  </SNMPAgent>
+
+  <!-- ===== SNMP v3 user (System > Administration > SNMP) ===== -->
+  <SNMPv3User transactionid="">
+    <Username>snmpv3monitor</Username>
+    <SecurityLevel>AuthPriv</SecurityLevel>
+    <AuthenticationAlgorithm>SHA256</AuthenticationAlgorithm>
+    <PrivacyAlgorithm>AES128</PrivacyAlgorithm>
+  </SNMPv3User>
+
+  <!-- ===== Time (System > Administration > Time) ===== -->
+  <Time transactionid="">
+    <TimeZone>US/Eastern</TimeZone>
+    <NTPServerList>
+      <NTPServer1>
+        <Server>192.168.1.10</Server>
+        <Status>Enable</Status>
+      </NTPServer1>
+      <NTPServer2>
+        <Server>pool.ntp.org</Server>
+        <Status>Enable</Status>
+      </NTPServer2>
+    </NTPServerList>
+    <UseNTP>Enable</UseNTP>
+  </Time>
+
+  <!-- ===== Syslog servers (Configure > System services > Log settings) ===== -->
+  <SyslogServers transactionid="">
+    <Name>SIEM-Primary</Name>
+    <ServerAddress>192.168.1.20</ServerAddress>
+    <Port>514</Port>
+    <EnableSecureConnection>Disable</EnableSecureConnection>
+    <Facility>DAEMON</Facility>
+    <SeverityLevel>Information</SeverityLevel>
+    <Format>Device standard format</Format>
+    <LogSettings>
+      <SecurityPolicy>
+        <PolicyRules>Enable</PolicyRules>
+        <InvalidTraffic>Enable</InvalidTraffic>
+      </SecurityPolicy>
+      <IPS>
+        <Anomaly>Enable</Anomaly>
+        <Signatures>Enable</Signatures>
+      </IPS>
+    </LogSettings>
+  </SyslogServers>
+
+  <!-- ===== Zones ===== -->
+  <Zone transactionid="">
+    <Name>LAN</Name>
+    <Type>LAN</Type>
+  </Zone>
+  <Zone transactionid="">
+    <Name>WAN</Name>
+    <Type>WAN</Type>
+  </Zone>
+  <Zone transactionid="">
+    <Name>DMZ</Name>
+    <Type>DMZ</Type>
+  </Zone>
+
+  <!-- ===== IP Host objects ===== -->
+  <IPHost transactionid="">
+    <Name>LAN_SUBNET</Name>
+    <IPFamily>IPv4</IPFamily>
+    <HostType>Network</HostType>
+    <IPAddress>192.168.1.0</IPAddress>
+    <Subnet>255.255.255.0</Subnet>
+  </IPHost>
+
+  <IPHost transactionid="">
+    <Name>MGMT_HOST</Name>
+    <IPFamily>IPv4</IPFamily>
+    <HostType>IP</HostType>
+    <IPAddress>192.168.1.10</IPAddress>
+  </IPHost>
+
+  <!-- ===== Firewall Rules ===== -->
+  <FirewallRule transactionid="">
+    <Name>LAN_to_WAN</Name>
+    <Description>Outbound internet access for LAN users</Description>
+    <IPFamily>IPv4</IPFamily>
+    <Status>Enable</Status>
+    <Position>1</Position>
+    <PolicyType>Network</PolicyType>
+    <NetworkPolicy>
+      <Action>Accept</Action>
+      <LogTraffic>Enable</LogTraffic>
+      <SkipLocalDestined>Disable</SkipLocalDestined>
+      <SourceZones>
+        <Zone>LAN</Zone>
+      </SourceZones>
+      <DestinationZones>
+        <Zone>WAN</Zone>
+      </DestinationZones>
+      <SourceNetworks>
+        <Network>LAN_SUBNET</Network>
+      </SourceNetworks>
+      <Schedule>All The Time</Schedule>
+      <IntrusionPrevention>GeneralPolicy</IntrusionPrevention>
+      <ScanVirus>Enable</ScanVirus>
+      <WebFilter>DefaultPolicy</WebFilter>
+    </NetworkPolicy>
+  </FirewallRule>
+
+  <FirewallRule transactionid="">
+    <Name>CleanupDrop</Name>
+    <Description>Drop all unmatched traffic</Description>
+    <IPFamily>IPv4</IPFamily>
+    <Status>Enable</Status>
+    <Position>100</Position>
+    <PolicyType>Network</PolicyType>
+    <NetworkPolicy>
+      <Action>Drop</Action>
+      <LogTraffic>Enable</LogTraffic>
+      <SkipLocalDestined>Disable</SkipLocalDestined>
+      <Schedule>All The Time</Schedule>
+    </NetworkPolicy>
+  </FirewallRule>
+
+</Configuration>

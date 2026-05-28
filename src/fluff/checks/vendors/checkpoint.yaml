@@ -1,0 +1,128 @@
+# Check Point security checks — CIS Check Point Benchmark L1 mapping
+# Input: CLISH/Gaia config export or SmartConsole object dump
+profile: checkpoint
+
+checks:
+
+  - id: CP-MGMT-001
+    generic_id: MGMT-001
+    title: "Telnet must be disabled"
+    severity: critical
+    cis:
+      - {benchmark: "CIS Check Point", control: "1.1.1", level: 1}
+    probe:
+      type: forbidden_regex
+      # Gaia: "set telnet enable"  |  old blades syntax: "set enabled-blades telnet enable"
+      pattern: '(?m)^\s*set\s+(telnet\s+enable|(enabled-blades|feature)\s+telnet\s+enable)'
+    remediation: "In Gaia CLISH: set telnet disable (and verify with show telnet)"
+
+  - id: CP-MGMT-002
+    generic_id: MGMT-003
+    title: "SSH must be enabled for management access"
+    severity: high
+    cis:
+      - {benchmark: "CIS Check Point", control: "1.1.2", level: 1}
+    probe:
+      type: required_regex
+      # Gaia: "set ssh enable"  |  SmartConsole API variant: "set ssh server enable"
+      pattern: '(?m)^\s*set\s+ssh\s+(enable|server\s+enable)'
+    remediation: "Gaia CLISH: set ssh enable"
+
+  - id: CP-MGMT-003
+    generic_id: MGMT-002
+    title: "Management access must be restricted by allowed-clients"
+    severity: high
+    cis:
+      - {benchmark: "CIS Check Point", control: "1.2.1", level: 1}
+    probe:
+      type: required_regex
+      # Gaia: "add allowed-client host X.X.X.X"  |  Gaia WebUI: "set allowed-client host ..."
+      pattern: '(?m)^\s*(add|set)\s+allowed-client\s+(host|net)\s+'
+    remediation: "Gaia CLISH: add allowed-client host <management-IP>"
+
+  - id: CP-AAA-001
+    generic_id: AAA-001
+    title: "Multi-admin must use TACACS+ or RADIUS"
+    severity: high
+    cis:
+      - {benchmark: "CIS Check Point", control: "2.1.1", level: 1}
+    probe:
+      type: manual
+    remediation: "In SmartConsole > Global Properties > Authentication: configure TACACS+/RADIUS for admin authentication."
+
+  - id: CP-AUTH-001
+    generic_id: AUTH-001
+    title: "Default admin account must be renamed"
+    severity: critical
+    cis:
+      - {benchmark: "CIS Check Point", control: "2.2.1", level: 1}
+    probe:
+      type: manual
+    remediation: "In SmartConsole: rename or delete the default 'admin' SmartConsole account."
+
+  - id: CP-AUTH-002
+    generic_id: AUTH-002
+    title: "Password expiry must be enforced"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Check Point", control: "2.2.2", level: 1}
+    probe:
+      type: required_regex
+      # Gaia show configuration: "set password-controls password-expiration <days>"
+      # Per-user expiry (legacy): "set user admin password-expires <days>"
+      pattern: '(?m)^\s*set\s+(password-controls\s+password-expiration\s+[1-9]|user\s+\S+\s+password-expires\s+[1-9])'
+    remediation: "Gaia CLISH: set password-controls password-expiration 90"
+
+  - id: CP-SNMP-001
+    generic_id: SNMP-001
+    title: "Default SNMP community strings must not be used"
+    severity: critical
+    cis:
+      - {benchmark: "CIS Check Point", control: "3.1.1", level: 1}
+    probe:
+      type: forbidden_regex
+      pattern: '(?m)^\s*set\s+snmp\s+community\s+(public|private)\b'
+    remediation: "Change SNMP community strings from default values."
+
+  - id: CP-LOG-001
+    generic_id: LOG-001
+    title: "Log forwarding to remote SmartLog/SIEM must be configured"
+    severity: high
+    cis:
+      - {benchmark: "CIS Check Point", control: "4.1.1", level: 1}
+    probe:
+      type: manual
+    remediation: "In SmartConsole > Logs & Monitor > Log Servers: configure log forwarding to SIEM."
+
+  - id: CP-TIME-001
+    generic_id: TIME-001
+    title: "NTP must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Check Point", control: "5.1.1", level: 1}
+    probe:
+      type: required_regex
+      # Older Gaia CLISH: "set ntp server primary <ip>"
+      # Newer Gaia R80+:  "add ntp server address <ip> type server"
+      pattern: '(?m)^\s*(set\s+ntp\s+server\s+|add\s+ntp\s+server\s+address\s+)'
+    remediation: "Gaia CLISH: add ntp server address <ip> type server version 4 && set ntp active on"
+
+  - id: CP-POLICY-001
+    generic_id: POLICY-001
+    title: "Any-any-any rules must not be permitted in the security policy"
+    severity: critical
+    cis:
+      - {benchmark: "CIS Check Point", control: "6.1.1", level: 1}
+    probe:
+      type: manual
+    remediation: "In SmartConsole: review and remove any accept rules with Source=Any, Destination=Any, Service=Any."
+
+  - id: CP-POLICY-002
+    generic_id: POLICY-002
+    title: "Cleanup rule must be at the bottom of the policy with logging enabled"
+    severity: high
+    cis:
+      - {benchmark: "CIS Check Point", control: "6.1.2", level: 1}
+    probe:
+      type: manual
+    remediation: "Ensure the last security rule is: Source=Any, Dest=Any, Action=Drop, Track=Log."

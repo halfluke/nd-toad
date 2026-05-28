@@ -1,0 +1,46 @@
+"""
+AdapterRouter: maps a profile string to the correct parser ``load()`` function
+and returns a ParsedConfig instance.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Callable
+
+from fluff.parsers.base import ParsedConfig
+
+# Lazy import map — avoids importing every parser at startup
+_LOADERS: dict[str, str] = {
+    "cisco_ios":   "fluff.parsers.cisco_ios",
+    "cisco_asa":   "fluff.parsers.cisco_asa",
+    "cisco_nxos":  "fluff.parsers.cisco_nxos",
+    "cisco_ftd":   "fluff.parsers.cisco_ftd",
+    "arista_eos":  "fluff.parsers.arista_eos",
+    "hpe_aruba":   "fluff.parsers.hpe_aruba",
+    "fortios":     "fluff.parsers.fortios",
+    "junos":       "fluff.parsers.junos",
+    "palo_alto":   "fluff.parsers.palo_alto",
+    "checkpoint":  "fluff.parsers.checkpoint",
+    "sophos_xg":   "fluff.parsers.sophos_xg",
+    "sonicwall":   "fluff.parsers.sonicwall",
+    "nokia_sros":  "fluff.parsers.nokia_sros",
+    "nokia_srl":   "fluff.parsers.nokia_srl",
+}
+
+
+def load_config(path: Path, profile: str) -> ParsedConfig:
+    """
+    Load *path* using the adapter for *profile*.
+
+    Raises ValueError for unknown profiles.
+    """
+    module_name = _LOADERS.get(profile)
+    if module_name is None:
+        raise ValueError(
+            f"Unknown profile {profile!r}. "
+            f"Supported profiles: {sorted(_LOADERS)}"
+        )
+    import importlib
+    module = importlib.import_module(module_name)
+    return module.load(path)

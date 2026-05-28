@@ -1,0 +1,186 @@
+# Cisco ASA security checks — CIS Cisco ASA 9.x Benchmark L1 mapping
+profile: cisco_asa
+
+checks:
+
+  - id: ASA-MGMT-001
+    generic_id: MGMT-001
+    title: "Telnet must not be permitted on management interfaces"
+    description: "ASA permits Telnet inside-only by default; still disable to avoid cleartext admin."
+    severity: critical
+    cis:
+      - {benchmark: "CIS Cisco ASA 9", control: "1.1.1", level: 1}
+    probe:
+      type: forbidden_regex
+      pattern: '(?m)^\s*telnet\s+\d'
+    remediation: "Remove all 'telnet' management statements; use SSH exclusively."
+
+  - id: ASA-MGMT-002
+    generic_id: MGMT-002
+    title: "HTTP/HTTPS management must not permit unrestricted source access"
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco ASA 9", control: "1.1.2", level: 1}
+    probe:
+      type: forbidden_regex
+      # Catches 'http 0.0.0.0 0.0.0.0 <iface>' — unrestricted management access from any IP.
+      # 'http server enable' alone is acceptable when paired with specific subnet ACLs
+      # (e.g., 'http 10.0.0.0 255.255.255.0 inside'). The dangerous pattern is 0/0 wildcard.
+      pattern: '(?m)^\s*http\s+0\.0\.0\.0\s+0\.0\.0\.0\s+\S+'
+    remediation: "Replace 'http 0.0.0.0 0.0.0.0 <iface>' with a specific management subnet: 'http <mgmt-net> <mask> <iface>'"
+
+  - id: ASA-MGMT-003
+    generic_id: MGMT-003
+    title: "SSH version 2 must be configured"
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco ASA 9", control: "1.1.3", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*ssh\s+version\s+2'
+    remediation: "Configure: ssh version 2"
+
+  - id: ASA-MGMT-004
+    generic_id: MGMT-004
+    title: "SSH access must be restricted by source IP"
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco ASA 9", control: "1.1.4", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*ssh\s+\d{1,3}\.\d{1,3}'
+    remediation: "Configure: ssh <mgmt-ip> <mask> <management-interface>"
+
+  - id: ASA-MGMT-005
+    generic_id: MGMT-005
+    title: "Console timeout must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco ASA 9", control: "1.2.1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*console\s+timeout\s+[1-9]'
+    remediation: "Configure: console timeout 10"
+
+  - id: ASA-MGMT-006
+    generic_id: AAA-002
+    title: "Login banner must be configured"
+    severity: low
+    cis:
+      - {benchmark: "CIS Cisco ASA 9", control: "1.3.1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*banner\s+(login|motd|exec)\s+'
+    remediation: "Configure: banner login <legal notice text>"
+
+  - id: ASA-AAA-001
+    generic_id: AAA-001
+    title: "AAA authentication must be enabled for SSH/serial access"
+    severity: critical
+    cis:
+      - {benchmark: "CIS Cisco ASA 9", control: "2.1.1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*aaa\s+authentication\s+(ssh|serial)\s+console'
+    remediation: "Configure: aaa authentication ssh console LOCAL (or RADIUS/TACACS group)"
+
+  - id: ASA-AAA-002
+    generic_id: AAA-001b
+    title: "AAA authentication must be enabled for enable mode"
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco ASA 9", control: "2.1.2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*aaa\s+authentication\s+enable\s+console'
+    remediation: "Configure: aaa authentication enable console LOCAL"
+
+  - id: ASA-AUTH-001
+    generic_id: AUTH-001
+    title: "Local user accounts must use privilege 15 carefully"
+    description: "Any local user with privilege 15 has full device control. Audit all such accounts."
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco ASA 9", control: "2.2.1", level: 1}
+    probe:
+      type: forbidden_regex
+      pattern: '(?m)^\s*username\s+\S+\s+password\s+'
+    remediation: "Replace 'username X password' with 'username X privilege 15 password 0 <pw>' or use AAA."
+
+  - id: ASA-SNMP-001
+    generic_id: SNMP-001
+    title: "Default SNMP community strings must not be used"
+    severity: critical
+    cis:
+      - {benchmark: "CIS Cisco ASA 9", control: "3.1.1", level: 1}
+    probe:
+      type: forbidden_regex
+      pattern: '(?m)^\s*snmp-server\s+community\s+(public|private)\b'
+    remediation: "Replace default SNMP community strings."
+
+  - id: ASA-SNMP-002
+    generic_id: SNMP-002
+    title: "SNMP must be restricted to management hosts"
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco ASA 9", control: "3.1.2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*snmp-server\s+host\s+'
+    remediation: "Configure: snmp-server host <iface> <mgmt-ip> poll community <string> version 3"
+
+  - id: ASA-LOG-001
+    generic_id: LOG-001
+    title: "Logging must be enabled"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco ASA 9", control: "4.1.1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*logging\s+enable'
+    remediation: "Configure: logging enable; logging host <iface> <syslog-ip>"
+
+  - id: ASA-LOG-002
+    generic_id: LOG-002
+    title: "Remote syslog must be configured"
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco ASA 9", control: "4.1.2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*logging\s+host\s+'
+    remediation: "Configure: logging host <iface> <syslog-server>"
+
+  - id: ASA-TIME-001
+    generic_id: TIME-001
+    title: "NTP server must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco ASA 9", control: "5.1.1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*ntp\s+server\s+'
+    remediation: "Configure: ntp server <ip>"
+
+  - id: ASA-POLICY-001
+    generic_id: POLICY-001
+    title: "Permit any-any ACL entries must not exist"
+    severity: critical
+    cis:
+      - {benchmark: "CIS Cisco ASA 9", control: "6.1.1", level: 1}
+    probe:
+      type: forbidden_regex
+      # Matches both classic ASA 'permit ip any any' and FTD LINA 'permit ip any4 any4'
+      pattern: '(?m)\bpermit\s+(ip|tcp|udp)\s+any4?\s+any4?\b'
+    remediation: "Replace any-any rules with least-privilege entries."
+
+  - id: ASA-POLICY-002
+    generic_id: POLICY-002
+    title: "ICMP must be restricted (no blanket permit icmp any any)"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco ASA 9", control: "6.1.2", level: 1}
+    probe:
+      type: forbidden_regex
+      pattern: '(?m)^\s*access-list\s+\S+\s+permit\s+icmp\s+any\s+any'
+    remediation: "Restrict ICMP to required types and source/destination pairs."

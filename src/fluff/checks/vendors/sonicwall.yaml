@@ -1,0 +1,110 @@
+# SonicWall SonicOS security checks — generic hardening baseline
+profile: sonicwall
+
+checks:
+
+  - id: SW-MGMT-001
+    generic_id: MGMT-001
+    title: "HTTP management must be disabled"
+    severity: high
+    cis:
+      - {benchmark: "Generic Hardening", control: "MGMT-001", level: 1}
+    probe:
+      type: forbidden_regex
+      # E-CLI format: "management http" (bare, no "no" prefix) means HTTP is enabled.
+      # Commands appear inside interface context blocks and may be indented — use ^\s* to match
+      # both indented and non-indented forms.
+      pattern: '(?m)^\s*management\s+http\s*$'
+    remediation: "E-CLI: no management http (use HTTPS/SSH only)"
+
+  - id: SW-MGMT-002
+    generic_id: MGMT-003
+    title: "SSH management should be enabled and Telnet disabled"
+    severity: high
+    cis:
+      - {benchmark: "Generic Hardening", control: "MGMT-002", level: 1}
+    probe:
+      type: required_regex
+      # E-CLI: "management ssh" to enable SSH. Commands inside interface blocks may be indented.
+      pattern: '(?m)^\s*management\s+ssh\s*$'
+    remediation: "E-CLI: management ssh"
+
+  - id: SW-MGMT-003
+    generic_id: MGMT-005
+    title: "Management session timeout must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "Generic Hardening", control: "MGMT-003", level: 1}
+    probe:
+      type: required_regex
+      # E-CLI: "management idle-timeout <minutes>"  |  XML: <IdleTimeout>
+      pattern: '(?im)^management\s+idle-timeout\s+[1-9]|<IdleTimeout>[1-9]'
+    remediation: "E-CLI: management idle-timeout 10"
+
+  - id: SW-SNMP-001
+    generic_id: SNMP-001
+    title: "Default SNMP community strings must not be used"
+    severity: critical
+    cis:
+      - {benchmark: "Generic Hardening", control: "SNMP-001", level: 1}
+    probe:
+      type: forbidden_regex
+      # E-CLI: "snmp community-name public"  |  old: "community public"
+      pattern: '(?im)(snmp\s+community(-name)?\s+(public|private)|(community|snmp-community)\s+(public|private))\b'
+    remediation: "Change all SNMP community strings from default values."
+
+  - id: SW-LOG-001
+    generic_id: LOG-001
+    title: "Remote syslog must be configured"
+    severity: high
+    cis:
+      - {benchmark: "Generic Hardening", control: "LOG-001", level: 1}
+    probe:
+      type: required_regex
+      # E-CLI: "syslog server <ip>"  |  XML: <SyslogServer>
+      pattern: '(?im)^syslog\s+server\s+\S+|<SyslogServer>'
+    remediation: "E-CLI: syslog server <siem-ip>"
+
+  - id: SW-TIME-001
+    generic_id: TIME-001
+    title: "NTP must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "Generic Hardening", control: "TIME-001", level: 1}
+    probe:
+      type: required_regex
+      # E-CLI: "ntp server <ip>"  |  XML: <NTPServer>
+      pattern: '(?im)^ntp\s+server\s+\S+|<NTPServer>'
+    remediation: "E-CLI: ntp server <ntp-ip>"
+
+  - id: SW-POLICY-001
+    generic_id: POLICY-001
+    title: "Any-to-any access rules must not be permitted"
+    severity: critical
+    cis:
+      - {benchmark: "Generic Hardening", control: "POLICY-001", level: 1}
+    probe:
+      type: forbidden_regex
+      # E-CLI multi-line block: "access-rule from any to any" followed by "action allow"
+      pattern: '(?ms)^access-rule\s+from\s+any\s+to\s+any[\s\S]{0,200}?^\s+action\s+allow'
+    remediation: "Replace any-to-any allow rules with specific source/destination pairs."
+
+  - id: SW-AUTH-001
+    generic_id: AUTH-001
+    title: "GMS / centralised management should be reviewed"
+    severity: medium
+    cis:
+      - {benchmark: "Generic Hardening", control: "AUTH-001", level: 1}
+    probe:
+      type: manual
+    remediation: "Review GMS management settings and confirm only authorised GMS hosts are configured."
+
+  - id: SW-POLICY-002
+    generic_id: POLICY-002
+    title: "Security services (IPS/GAV/Anti-Spy) must be enabled on LAN-to-WAN traffic"
+    severity: medium
+    cis:
+      - {benchmark: "Generic Hardening", control: "POLICY-002", level: 1}
+    probe:
+      type: manual
+    remediation: "Verify Security Services are applied to relevant access rule zones."

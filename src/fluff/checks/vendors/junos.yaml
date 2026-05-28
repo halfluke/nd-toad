@@ -1,0 +1,204 @@
+# Juniper JunOS security checks — CIS Juniper OS Benchmark L1 mapping
+#
+# All patterns support BOTH export formats:
+#   Set format    : "show configuration | display set"  → set system services ssh
+#   Curly format  : "show configuration"               → services { ssh; }
+profile: junos
+
+checks:
+
+  - id: JUNOS-MGMT-001
+    generic_id: MGMT-001
+    title: "Telnet must be disabled"
+    severity: critical
+    cis:
+      - {benchmark: "CIS Juniper JunOS", control: "1.1.1", level: 1}
+    probe:
+      type: forbidden_regex
+      # set format: set system services telnet
+      # curly format: telnet; under services {
+      pattern: '(?m)(^\s*set\s+system\s+services\s+telnet|^\s+telnet\s*;\s*$)'
+    remediation: "Remove: set system services telnet (ensure only ssh is listed under system services)"
+
+  - id: JUNOS-MGMT-002
+    generic_id: MGMT-003
+    title: "SSH must be the only management transport"
+    severity: high
+    cis:
+      - {benchmark: "CIS Juniper JunOS", control: "1.1.2", level: 1}
+    probe:
+      type: required_regex
+      # set format: set system services ssh
+      # curly format: ssh; or ssh { inside services { system {
+      pattern: '(?m)(^\s*set\s+system\s+services\s+ssh|^\s+ssh\s*[\{;]\s*$)'
+    remediation: "Configure: set system services ssh"
+
+  - id: JUNOS-MGMT-003
+    generic_id: MGMT-003b
+    title: "SSH should use protocol version 2 only"
+    severity: high
+    cis:
+      - {benchmark: "CIS Juniper JunOS", control: "1.1.3", level: 1}
+    probe:
+      type: required_regex
+      # set format: set system services ssh protocol-version v2
+      # curly format: protocol-version v2; inside ssh { services { system {
+      pattern: '(?m)(^\s*set\s+system\s+services\s+ssh\s+protocol-version\s+v2|^\s+protocol-version\s+v2\s*;)'
+    remediation: "Configure: set system services ssh protocol-version v2"
+
+  - id: JUNOS-MGMT-004
+    generic_id: MGMT-002
+    title: "FTP service must be disabled"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Juniper JunOS", control: "1.1.4", level: 1}
+    probe:
+      type: forbidden_regex
+      # set format: set system services ftp
+      # curly format: ftp; inside services {
+      pattern: '(?m)(^\s*set\s+system\s+services\s+ftp|^\s+ftp\s*;\s*$)'
+    remediation: "Remove: set system services ftp"
+
+  - id: JUNOS-MGMT-005
+    generic_id: MGMT-005
+    title: "Login idle-timeout must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Juniper JunOS", control: "1.2.1", level: 1}
+    probe:
+      type: required_regex
+      # set format: set system login idle-timeout 10
+      # curly format: idle-timeout 10; inside login { system {
+      pattern: '(?m)(^\s*set\s+system\s+login\s+idle-timeout\s+[1-9]|^\s+idle-timeout\s+[1-9]\d*\s*;)'
+    remediation: "Configure: set system login idle-timeout 10"
+
+  - id: JUNOS-MGMT-006
+    generic_id: AAA-002
+    title: "Login message (banner) must be configured"
+    severity: low
+    cis:
+      - {benchmark: "CIS Juniper JunOS", control: "1.3.1", level: 1}
+    probe:
+      type: required_regex
+      # set format: set system login message "..."
+      # curly format: message "..."; inside login { system {
+      pattern: '(?m)(^\s*set\s+system\s+login\s+message\s+|^\s+message\s+"[^"]+"\s*;)'
+    remediation: "Configure: set system login message \"<legal notice>\""
+
+  - id: JUNOS-AAA-001
+    generic_id: AAA-001
+    title: "RADIUS or TACACS+ authentication must be configured"
+    severity: high
+    cis:
+      - {benchmark: "CIS Juniper JunOS", control: "2.1.1", level: 1}
+    probe:
+      type: required_regex
+      # set format: set system radius-server / tacplus-server
+      # curly format: radius-server { or tacplus-server { inside system {
+      pattern: '(?m)(^\s*set\s+system\s+(radius-server|tacplus-server)\s+|^\s+(radius-server|tacplus-server)\s*\{)'
+    remediation: "Configure RADIUS: set system radius-server <ip> secret <key>  and set system authentication-order [radius password]"
+
+  - id: JUNOS-AUTH-001
+    generic_id: AUTH-001
+    title: "Root login must be disabled or protected by SSH key"
+    severity: critical
+    cis:
+      - {benchmark: "CIS Juniper JunOS", control: "2.2.1", level: 1}
+    probe:
+      type: required_regex
+      # set format: set system root-authentication ssh-rsa / encrypted-password
+      # curly format: ssh-rsa "..."; or encrypted-password "..."; inside root-authentication {
+      pattern: '(?m)(^\s*set\s+system\s+root-authentication\s+(ssh-rsa|ssh-dsa|ssh-ecdsa|encrypted-password)|^\s+(ssh-rsa|ssh-dsa|ssh-ecdsa)\s+")'
+    remediation: "Set root authentication to SSH key only: set system root-authentication ssh-rsa <pubkey>"
+
+  - id: JUNOS-AUTH-002
+    generic_id: AUTH-002
+    title: "Plain-text passwords must not be used for user accounts"
+    severity: high
+    cis:
+      - {benchmark: "CIS Juniper JunOS", control: "2.2.2", level: 1}
+    probe:
+      type: forbidden_regex
+      # set format: set system login user X authentication plain-text-password
+      # curly format: plain-text-password "..."; — JunOS never actually stores plain-text, but flag if seen
+      pattern: '(?m)(^\s*set\s+system\s+login\s+user\s+\S+\s+authentication\s+plain-text-password|^\s+plain-text-password\s+")'
+    remediation: "Use encrypted-password instead of plain-text-password for all user accounts."
+
+  - id: JUNOS-SNMP-001
+    generic_id: SNMP-001
+    title: "Default SNMP community strings must not be used"
+    severity: critical
+    cis:
+      - {benchmark: "CIS Juniper JunOS", control: "3.1.1", level: 1}
+    probe:
+      type: forbidden_regex
+      # set format: set snmp community public
+      # curly format: community public { ... } or name public; inside snmp {
+      pattern: '(?m)(^\s*set\s+snmp\s+community\s+(public|private)\b|^\s+community\s+(public|private)\s*\{)'
+    remediation: "Remove default SNMP communities. Configure SNMPv3."
+
+  - id: JUNOS-SNMP-002
+    generic_id: SNMP-002
+    title: "SNMP must be restricted by client-list"
+    severity: high
+    cis:
+      - {benchmark: "CIS Juniper JunOS", control: "3.1.2", level: 1}
+    probe:
+      type: required_regex
+      # set format: set snmp client-list
+      # curly format: client-list { inside snmp {
+      pattern: '(?m)(^\s*set\s+snmp\s+client-list|^\s+client-list\s+\S+\s*\{)'
+    remediation: "Configure: set snmp client-list <name> <mgmt-prefix>"
+
+  - id: JUNOS-LOG-001
+    generic_id: LOG-001
+    title: "Remote syslog must be configured"
+    severity: high
+    cis:
+      - {benchmark: "CIS Juniper JunOS", control: "4.1.1", level: 1}
+    probe:
+      type: required_regex
+      # set format: set system syslog host <ip-or-hostname>
+      # curly format: host X.X.X.X { ... } inside syslog { system {
+      # Use \S+ (not \d) for the set-format branch so FQDN-based targets are also accepted.
+      pattern: '(?m)(^\s*set\s+system\s+syslog\s+host\s+\S+|^\s+host\s+\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\s*\{)'
+    remediation: "Configure: set system syslog host <ip> any notice"
+
+  - id: JUNOS-LOG-002
+    generic_id: LOG-001b
+    title: "Interactive commands must be logged"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Juniper JunOS", control: "4.1.2", level: 1}
+    probe:
+      type: required_regex
+      # set format: set system syslog <dest> interactive-commands
+      # curly format: interactive-commands any; inside syslog {
+      pattern: '(?m)(^\s*set\s+system\s+syslog\s+\S+\s+interactive-commands\s+|^\s+interactive-commands\s+\S+\s*;)'
+    remediation: "Configure: set system syslog host <ip> interactive-commands any"
+
+  - id: JUNOS-TIME-001
+    generic_id: TIME-001
+    title: "NTP must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Juniper JunOS", control: "5.1.1", level: 1}
+    probe:
+      type: required_regex
+      # set format: set system ntp server <ip>
+      # curly format: ntp { server X.X.X.X; } inside system {
+      pattern: '(?m)(^\s*set\s+system\s+ntp\s+server\s+|^\s+ntp\s*\{[\s\S]{0,300}server\s+\d{1,3}\.\d{1,3})'
+    remediation: "Configure: set system ntp server <ip>"
+
+  - id: JUNOS-POLICY-001
+    generic_id: POLICY-001
+    title: "Firewall filter must not permit any-any"
+    severity: critical
+    cis:
+      - {benchmark: "CIS Juniper JunOS", control: "6.1.1", level: 1}
+    probe:
+      type: forbidden_regex
+      # set format: set firewall family ... term ... then accept (bare, without specific match)
+      # The check flags 'then accept' — reviewers must verify match conditions exist
+      pattern: '(?m)(^\s*set\s+firewall\s+family\s+\S+\s+filter\s+\S+\s+term\s+\S+\s+then\s+accept|^\s+then\s+\{\s*\n\s+accept\s*;\s*\n\s+\})'
+    remediation: "Review each filter term — ensure 'then accept' is preceded by specific match conditions, not a bare catch-all."

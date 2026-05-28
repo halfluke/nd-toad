@@ -1,0 +1,181 @@
+# Fortinet FortiOS security checks — CIS FortiOS Benchmark L1 mapping
+profile: fortios
+
+checks:
+
+  - id: FORTI-MGMT-001
+    generic_id: MGMT-001
+    title: "Telnet must not be allowed on any management interface"
+    description: >
+      Checks 'config system interface' entries for 'set allowaccess ... telnet'.
+      Note: 'set allow-access ... telnet' inside 'config vpn ssl web portal' is SSL-VPN
+      user bookmarks, not admin management access, and is not caught by this check.
+    severity: critical
+    cis:
+      - {benchmark: "CIS Fortinet FortiOS", control: "1.1.1", level: 1}
+    probe:
+      type: forbidden_regex
+      # 'set allowaccess' (no hyphen) controls which admin protocols are allowed on an interface.
+      # 'set allow-access' (with hyphen) is SSL-VPN portal widget config — different command.
+      pattern: '(?m)^\s+set\s+allowaccess\s+.*\btelnet\b'
+    remediation: "Remove 'telnet' from 'set allowaccess' on all interfaces: config system interface > edit <iface> > set allowaccess <protos-without-telnet>"
+
+  - id: FORTI-MGMT-002
+    generic_id: MGMT-001b
+    title: "Telnet admin access must be explicitly disabled in system global"
+    severity: critical
+    cis:
+      - {benchmark: "CIS Fortinet FortiOS", control: "1.1.1", level: 1}
+    probe:
+      type: forbidden_regex
+      pattern: '(?m)^\s+set\s+admin-telnet\s+enable'
+    remediation: "Under 'config system global': set admin-telnet disable"
+
+  - id: FORTI-MGMT-003
+    generic_id: MGMT-003
+    title: "SSH must use SSHv2 only"
+    severity: high
+    cis:
+      - {benchmark: "CIS Fortinet FortiOS", control: "1.1.2", level: 1}
+    probe:
+      type: forbidden_regex
+      # 'required_regex: set admin-ssh-v1 disable' causes false positives on partial
+      # FortiOS exports ('show configuration' / non-full backups): FortiOS 7.x has
+      # admin-ssh-v1 disabled by default and omits the setting from non-full exports.
+      # A forbidden_regex for the explicit enable is unambiguous regardless of export
+      # format — SSH v1 is never acceptable, and explicitly enabling it is always wrong.
+      # Note: FortiOS 6.x has SSHv1 enabled by default; use 'show full-configuration'
+      # or the full backup for a definitive audit on older firmware versions.
+      pattern: '(?m)^\s+set\s+admin-ssh-v1\s+enable'
+    remediation: "Under 'config system global': set admin-ssh-v1 disable. For older FortiOS, audit with 'show full-configuration' to confirm the default has not been inherited."
+
+  - id: FORTI-MGMT-004
+    generic_id: MGMT-002
+    title: "HTTP admin access must be disabled"
+    severity: high
+    cis:
+      - {benchmark: "CIS Fortinet FortiOS", control: "1.1.3", level: 1}
+    probe:
+      type: required_regex
+      # FortiOS default admin-port is 80 (HTTP management on). FortiOS 'show configuration'
+      # (non-full export) only emits settings that differ from factory defaults, so admin-port
+      # at its default value of 80 may be ABSENT from the exported config — a forbidden_regex
+      # for a non-zero port would then see nothing and silently pass while HTTP is enabled.
+      # Requiring 'set admin-port 0' ensures the explicit HTTP-disable is confirmed.
+      pattern: '(?m)^\s+set\s+admin-port\s+0\b'
+    remediation: "Under 'config system global': set admin-port 0 (disables HTTP; use HTTPS on admin-sport)."
+
+  - id: FORTI-MGMT-005
+    generic_id: MGMT-005
+    title: "Administrator idle timeout must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Fortinet FortiOS", control: "1.2.1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s+set\s+admintimeout\s+[1-9]'
+    remediation: "Under 'config system global': set admintimeout 10 (minutes)"
+
+  - id: FORTI-MGMT-006
+    generic_id: AAA-002
+    title: "Login warning banner must be configured"
+    severity: low
+    cis:
+      - {benchmark: "CIS Fortinet FortiOS", control: "1.3.1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s+set\s+pre-login-banner\s+enable'
+    remediation: "Under 'config system global': set pre-login-banner enable; set post-login-banner enable"
+
+  - id: FORTI-AUTH-001
+    generic_id: AUTH-001
+    title: "Default admin account must be renamed or disabled"
+    description: "The default 'admin' account is a well-known target. Rename it or disable it."
+    severity: critical
+    cis:
+      - {benchmark: "CIS Fortinet FortiOS", control: "2.1.1", level: 1}
+    probe:
+      type: forbidden_regex
+      pattern: '(?m)config system admin[\s\S]*?\n\s+edit\s+"admin"\s*\n'
+    remediation: "Rename the default admin account: rename admin to a non-default name."
+
+  - id: FORTI-AUTH-002
+    generic_id: AUTH-002
+    title: "Password policy must enforce minimum complexity"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Fortinet FortiOS", control: "2.1.2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)config system password-policy'
+    remediation: "Configure 'config system password-policy': set status enable; set min-length 14; set must-contain upper-case-letter lower-case-letter number non-alphanumeric"
+
+  - id: FORTI-SNMP-001
+    generic_id: SNMP-001
+    title: "Default SNMP community strings (public/private) must not be used"
+    severity: high
+    cis:
+      - {benchmark: "CIS Fortinet FortiOS", control: "3.1.1", level: 1}
+    probe:
+      type: forbidden_regex
+      # FortiOS SNMP community string is set with 'set name "<community>"' inside
+      # 'config system snmp community'. The previous pattern used the non-existent
+      # 'set community' command; the correct key is 'set name'.
+      # (?ms): dotall so .*? spans the multi-line block between config and the name setting.
+      pattern: '(?ms)config system snmp community.*?set\s+name\s+"(public|private)"'
+    remediation: "Under 'config system snmp community': rename the community from 'public'/'private' to a unique string. Prefer SNMPv3 with AuthPriv."
+
+  - id: FORTI-LOG-001
+    generic_id: LOG-001
+    title: "Remote syslog must be configured"
+    severity: high
+    cis:
+      - {benchmark: "CIS Fortinet FortiOS", control: "4.1.1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^config log syslogd setting'
+    remediation: "Configure 'config log syslogd setting': set status enable; set server <ip>"
+
+  - id: FORTI-LOG-002
+    generic_id: LOG-001b
+    title: "Log level must capture security-relevant events"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Fortinet FortiOS", control: "4.1.2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s+set\s+severity\s+(information|notice|warning)'
+    remediation: "Under syslog or memory logging config: set severity information"
+
+  - id: FORTI-TIME-001
+    generic_id: TIME-001
+    title: "NTP must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Fortinet FortiOS", control: "5.1.1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^config system ntp'
+    remediation: "Configure 'config system ntp': set type custom; set ntpserver <ip>; set syncinterval 60"
+
+  - id: FORTI-POLICY-001
+    generic_id: POLICY-001
+    title: "Firewall rules with 'all' source/destination addresses must be reviewed"
+    description: "A policy with srcaddr=all and dstaddr=all is effectively any-any."
+    severity: critical
+    cis:
+      - {benchmark: "CIS Fortinet FortiOS", control: "6.1.1", level: 1}
+    probe:
+      type: forbidden_regex
+      pattern: '(?m)^\s+set\s+(srcaddr|dstaddr)\s+"all"'
+    remediation: "Replace 'all' address objects with specific source/destination address objects."
+
+  - id: FORTI-POLICY-002
+    generic_id: POLICY-002
+    title: "Firewall policies must have application control or IPS enabled where permitted"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Fortinet FortiOS", control: "6.2.1", level: 1}
+    probe:
+      type: manual
+    remediation: "Review each 'config firewall policy' entry and ensure ips-sensor or app-sensor is applied to permitted traffic."

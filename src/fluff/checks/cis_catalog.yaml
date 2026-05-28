@@ -1,0 +1,282 @@
+# CIS Benchmark L1 control catalog — manual entries only (automation: manual)
+# Entries here are emitted as Status.MANUAL when the corresponding automated
+# probe is absent from the vendor YAML file.
+#
+# Format per entry:
+#   benchmark: "CIS <Vendor> <OS>"
+#   control:   "x.y.z"
+#   level:     1
+#   title:     "Short control title"
+#   automation: manual   # or: auto (skip — handled by vendor YAML probes)
+#   reason:    "Why this cannot be automated from a static config file"
+#   remediation: "Concise remediation guidance"
+
+cisco_ios:
+  - benchmark: "CIS Cisco IOS 17"
+    control: "1.1.5"
+    level: 1
+    title: "AAA accounting must be configured"
+    automation: manual
+    reason: "Accounting requires TACACS+/RADIUS reachability and policy decisions that vary by environment."
+    remediation: "Configure: aaa accounting exec default start-stop group tacacs+"
+
+  - benchmark: "CIS Cisco IOS 17"
+    control: "1.3.2"
+    level: 1
+    title: "MOTD banner must be configured"
+    automation: manual
+    reason: "Banner content requires legal review; presence alone is checked automatically (IOS-MGMT-008)."
+    remediation: "Configure: banner motd ^C <legal notice approved by legal team> ^C"
+
+  - benchmark: "CIS Cisco IOS 17"
+    control: "2.1.8"
+    level: 1
+    title: "IP proxy-arp must be disabled on all interfaces"
+    automation: manual
+    reason: "Requires per-interface review; interfaces without 'no ip proxy-arp' inherit the default."
+    remediation: "On each non-gateway interface: no ip proxy-arp"
+
+  - benchmark: "CIS Cisco IOS 17"
+    control: "3.1.5"
+    level: 1
+    title: "AUX line must be disabled or secured"
+    automation: manual
+    reason: "AUX line presence depends on platform and may not appear in config when not used."
+    remediation: "Under 'line aux 0': transport input none; no exec; login local"
+
+  - benchmark: "CIS Cisco IOS 17"
+    control: "4.1.3"
+    level: 1
+    title: "SNMPv3 must be preferred over SNMPv1/v2c"
+    automation: manual
+    reason: "Detecting active SNMPv1/v2c use without community context requires policy review."
+    remediation: "Configure SNMPv3: snmp-server group <name> v3 priv; snmp-server user <name> <group> v3 auth sha <key> priv aes 128 <key>"
+
+  - benchmark: "CIS Cisco IOS 17"
+    control: "6.1.2"
+    level: 1
+    title: "ACL logging must be enabled for permit and deny entries"
+    automation: manual
+    reason: "Per-ACL logging is a policy decision; requires review of all access-list entries."
+    remediation: "Add 'log' keyword to significant ACL entries: permit/deny … log"
+
+  - benchmark: "CIS Cisco IOS 17"
+    control: "6.2.1"
+    level: 1
+    title: "Routing protocol authentication must be configured"
+    automation: manual
+    reason: "Routing protocol presence and authentication method varies by network design."
+    remediation: "Enable MD5/SHA authentication on all routing protocols (OSPF, EIGRP, BGP, etc.)."
+
+  - benchmark: "CIS Cisco IOS 17"
+    control: "6.3.1"
+    level: 1
+    title: "Control plane policing must be reviewed"
+    automation: manual
+    reason: "CoPP policy adequacy requires review against environment-specific traffic patterns."
+    remediation: "Review and tune the CoPP policy-map applied to the control-plane service-policy."
+
+cisco_asa:
+  - benchmark: "CIS Cisco ASA 9"
+    control: "2.3.1"
+    level: 1
+    title: "AAA accounting must be configured for management sessions"
+    automation: manual
+    reason: "Requires TACACS+/RADIUS and policy decision on what to account."
+    remediation: "Configure: aaa accounting enable console <server-group>; aaa accounting ssh console <server-group>"
+
+  - benchmark: "CIS Cisco ASA 9"
+    control: "6.2.1"
+    level: 1
+    title: "Failover configuration must be reviewed if HA is in use"
+    automation: manual
+    reason: "Failover security depends on deployment topology."
+    remediation: "If failover is configured: verify failover link is encrypted with 'failover key'"
+
+  - benchmark: "CIS Cisco ASA 9"
+    control: "6.3.1"
+    level: 1
+    title: "MPF inspect policies must be reviewed"
+    automation: manual
+    reason: "Modular Policy Framework adequacy requires traffic-pattern review."
+    remediation: "Review 'class-map' and 'policy-map' inspection policies."
+
+cisco_nxos:
+  - benchmark: "CIS Cisco NX-OS"
+    control: "1.4.1"
+    level: 1
+    title: "AAA accounting must be configured"
+    automation: manual
+    reason: "Accounting server and policy decisions vary by environment."
+    remediation: "Configure: aaa accounting default group tacacs+"
+
+  - benchmark: "CIS Cisco NX-OS"
+    control: "6.2.1"
+    level: 1
+    title: "vPC peer-link security must be reviewed"
+    automation: manual
+    reason: "vPC topology verification requires network design knowledge."
+    remediation: "Verify vPC peer-link does not carry unnecessary VLANs; review allowed VLANs on peer-link."
+
+cisco_ftd:
+  - benchmark: "CIS Cisco Firepower"
+    control: "2.2.1"
+    level: 1
+    title: "Admin accounts must use MFA (FMC-managed)"
+    automation: manual
+    reason: "MFA configuration is in FMC and not visible in FTD CLI config."
+    remediation: "In FMC: System > Users > configure MFA for all admin accounts."
+
+  - benchmark: "CIS Cisco Firepower"
+    control: "6.4.1"
+    level: 1
+    title: "HA failover must be configured for production deployments"
+    automation: manual
+    reason: "HA requirements are operational and cannot be inferred from static config."
+    remediation: "Review HA/failover configuration for production FTD deployments."
+
+arista_eos:
+  - benchmark: "CIS Arista EOS"
+    control: "2.3.1"
+    level: 1
+    title: "AAA accounting must be configured"
+    automation: manual
+    reason: "Accounting method depends on TACACS+/RADIUS availability."
+    remediation: "Configure: aaa accounting commands all default start-stop group tacacs+"
+
+  - benchmark: "CIS Arista EOS"
+    control: "6.3.1"
+    level: 1
+    title: "CoPP policy adequacy must be validated"
+    automation: manual
+    reason: "CoPP policy correctness requires traffic profile review."
+    remediation: "Review control-plane policy-map rates against expected management traffic volumes."
+
+hpe_aruba:
+  - benchmark: "CIS HPE Aruba"
+    control: "2.3.1"
+    level: 1
+    title: "TACACS+ accounting must be configured"
+    automation: manual
+    reason: "Accounting configuration requires server availability decisions."
+    remediation: "Configure TACACS+ accounting for all management access."
+
+  - benchmark: "CIS HPE Aruba"
+    control: "7.1.1"
+    level: 1
+    title: "Unused ports must be disabled and placed in an unused VLAN"
+    automation: manual
+    reason: "Port state cannot be reliably determined from configuration alone."
+    remediation: "Disable: interface X — disable; untagged vlan 999 (unused VLAN)"
+
+fortios:
+  - benchmark: "CIS Fortinet FortiOS"
+    control: "2.2.1"
+    level: 1
+    title: "Two-factor authentication must be enabled for admin accounts"
+    automation: manual
+    reason: "FortiToken/email 2FA configuration requires FortiCloud or physical token."
+    remediation: "In User & Authentication > Administrators: enable two-factor auth for each admin."
+
+  - benchmark: "CIS Fortinet FortiOS"
+    control: "6.3.1"
+    level: 1
+    title: "FortiGuard subscription and updates must be current"
+    automation: manual
+    reason: "Subscription state is operational, not visible in static config."
+    remediation: "Verify FortiGuard subscriptions are active: System > FortiGuard"
+
+  - benchmark: "CIS Fortinet FortiOS"
+    control: "6.4.1"
+    level: 1
+    title: "HA configuration must be reviewed"
+    automation: manual
+    reason: "HA adequacy depends on deployment requirements."
+    remediation: "If HA is deployed: verify heartbeat interface is on a dedicated link."
+
+junos:
+  - benchmark: "CIS Juniper JunOS"
+    control: "2.3.1"
+    level: 1
+    title: "Routing Engine (RE) protection filter must be applied"
+    automation: manual
+    reason: "RE filter adequacy requires network-specific review of permitted prefixes."
+    remediation: "Configure and apply a firewall filter on lo0 to restrict traffic to the RE."
+
+  - benchmark: "CIS Juniper JunOS"
+    control: "6.2.1"
+    level: 1
+    title: "Routing protocol authentication must be enabled"
+    automation: manual
+    reason: "Protocol presence and key management varies by topology."
+    remediation: "Enable authentication on all routing protocols (OSPF, IS-IS, BGP)."
+
+palo_alto:
+  - benchmark: "CIS Palo Alto Firewall 11"
+    control: "2.3.1"
+    level: 1
+    title: "Admin role separation must be implemented"
+    automation: manual
+    reason: "Role-based access adequacy requires review of admin role definitions."
+    remediation: "Define custom admin roles in Device > Admin Roles; avoid assigning 'superuser' broadly."
+
+  - benchmark: "CIS Palo Alto Firewall 11"
+    control: "6.3.1"
+    level: 1
+    title: "HA configuration must be reviewed"
+    automation: manual
+    reason: "HA and sync state is operational."
+    remediation: "Verify Device > High Availability config and confirm HA sync is healthy."
+
+checkpoint:
+  - benchmark: "CIS Check Point"
+    control: "2.3.1"
+    level: 1
+    title: "Secure Internal Communication (SIC) must use strong encryption"
+    automation: manual
+    reason: "SIC configuration requires SmartConsole access."
+    remediation: "In SmartConsole: verify SIC uses AES-256 for all gateway communications."
+
+  - benchmark: "CIS Check Point"
+    control: "6.2.1"
+    level: 1
+    title: "IPS profile must be applied to accepted traffic"
+    automation: manual
+    reason: "IPS profile assignment is in SmartConsole policy, not the text export."
+    remediation: "In SmartConsole: verify each allow rule has an IPS profile assigned."
+
+sophos_xg:
+  - benchmark: "CIS Sophos XG"
+    control: "2.3.1"
+    level: 1
+    title: "Two-factor authentication must be enabled for admin accounts"
+    automation: manual
+    reason: "2FA configuration is in the management console, not the XML backup."
+    remediation: "In Administration > Device Access: enable OTP for admin login."
+
+sonicwall:
+  - benchmark: "Generic Hardening"
+    control: "2.1.1"
+    level: 1
+    title: "Admin accounts must use MFA if available"
+    automation: manual
+    reason: "MFA capability depends on SonicWall firmware version."
+    remediation: "Enable TOTP/email OTP for administrator accounts in Users > Settings."
+
+nokia_sros:
+  - benchmark: "Nokia SR OS Hardening"
+    control: "6.3.1"
+    level: 1
+    title: "MPLS LSP security must be reviewed"
+    automation: manual
+    reason: "LSP security requirements are service-specific."
+    remediation: "Review LDP/RSVP authentication configuration for all LSPs."
+
+nokia_srl:
+  - benchmark: "Nokia SR Linux Hardening"
+    control: "6.2.1"
+    level: 1
+    title: "gRPC/gNMI access must be restricted to authorised management hosts"
+    automation: manual
+    reason: "gRPC TLS certificate and ACL verification requires operational review."
+    remediation: "Under /system/gnmi-server: configure TLS and restrict source prefixes."
