@@ -264,7 +264,15 @@ The repository ships a `samples/` directory containing **67 real and synthetic c
 # Table output per file (shows failures and manual checks)
 nd-goat audit --dir samples/
 
-# Compact JSON summary — one record per file
+# JSON output — one record per file, written to stdout
+nd-goat audit --dir samples/ --json
+```
+
+The `--json` flag switches the output from the rich terminal table to machine-readable JSON.
+You can pipe that JSON into any tool you like — `jq`, a SIEM, a script, etc.
+The snippet below is just one example using a short Python one-liner to print a compact score per file:
+
+```bash
 nd-goat audit --dir samples/ --json | python3 -c "
 import json, sys
 data = json.load(sys.stdin)
@@ -294,7 +302,10 @@ nd-goat audit -i samples/cisco_ios/sample_01.ios
 # Show passing checks as well
 nd-goat audit -i samples/cisco_ios/sample_01.ios --show-pass
 
-# JSON — pipe to python for targeted queries
+# JSON output — save to a file or pipe to jq / any other processor
+nd-goat audit --json -i samples/palo_alto/iron_skillet_panos_full.xml > result.json
+
+# Optional: extract only failing checks with a Python one-liner
 nd-goat audit --json -i samples/palo_alto/iron_skillet_panos_full.xml | \
   python3 -c "
 import json, sys
