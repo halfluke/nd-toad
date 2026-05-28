@@ -601,6 +601,21 @@ Cross-vendor stable IDs allow tooling to correlate findings across different pla
 
 ---
 
+## Parser families
+
+Each vendor parser is a thin adapter that exposes a common `ParsedConfig` protocol to the rule engine. Under the hood, four parsing families are used depending on the config format:
+
+| Family | Library | Profiles |
+|--------|---------|----------|
+| **Cisco-like** | [`ciscoconfparse2`](https://pypi.org/project/ciscoconfparse2/) — understands indented IOS-style blocks and `hier_config` hierarchy | `cisco_ios`, `cisco_asa`, `cisco_nxos`, `cisco_ftd`, `arista_eos`, `hpe_aruba` |
+| **Flat text** | `TextBasedConfig` (built-in) — line-oriented text with no hierarchy assumptions; checks run as regex probes against the raw text | `fortios`, `junos`, `checkpoint`, `sonicwall`, `nokia_sros` |
+| **XML** | [`lxml`](https://pypi.org/project/lxml/) with stdlib `xml.etree` fallback — parses the full XML tree; checks use XPath-compatible regex patterns | `palo_alto`, `sophos_xg` |
+| **JSON / mixed** | stdlib `json` + flat text fallback — handles both JSON export (`info json`) and `info flat` set-command format | `nokia_srl` |
+
+All families feed into the same rule engine (`engine/runner.py`), so adding a new vendor means writing one parser adapter and one YAML check file — the engine, report, and CLI need no changes.
+
+---
+
 ## Project structure
 
 ```
