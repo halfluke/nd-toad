@@ -608,7 +608,7 @@ Each vendor parser is a thin adapter that exposes a common `ParsedConfig` protoc
 | Family | Library | Profiles |
 |--------|---------|----------|
 | **Cisco-like** | [`ciscoconfparse2`](https://pypi.org/project/ciscoconfparse2/) — understands indented IOS-style blocks and `hier_config` hierarchy | `cisco_ios`, `cisco_asa`, `cisco_nxos`, `cisco_ftd`, `arista_eos`, `hpe_aruba` |
-| **Flat text** | `TextBasedConfig` (built-in) — line-oriented text with no hierarchy assumptions; checks run as regex probes against the raw text | `fortios`, `junos`, `checkpoint`, `sonicwall`, `nokia_sros` |
+| **Flat text** | `TextBasedConfig` (built-in) — line-oriented text with no hierarchy assumptions; checks run as regex probes against the raw text. The FortiOS parser additionally uses [`hier_config`](https://pypi.org/project/hier-config/) (lazily, for block traversal on the nested `config … set … end` structure) | `fortios`, `junos`, `checkpoint`, `sonicwall`, `nokia_sros` |
 | **XML** | [`lxml`](https://pypi.org/project/lxml/) with stdlib `xml.etree` fallback — parses the full XML tree; checks use XPath-compatible regex patterns | `palo_alto`, `sophos_xg` |
 | **JSON / mixed** | stdlib `json` + flat text fallback — handles both JSON export (`info json`) and `info flat` set-command format | `nokia_srl` |
 
