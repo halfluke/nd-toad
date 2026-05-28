@@ -242,8 +242,17 @@ nd-goat audit --dir ./network-configs/
 # Save JSON report to file
 nd-goat audit -i firewall.conf --output report.json
 
+# Save CSV report to file (one row per check, great for spreadsheets)
+nd-goat audit -i firewall.conf --csv report.csv
+
+# Batch audit a directory and save all findings in one CSV
+nd-goat audit --dir ./network-configs/ --csv all-findings.csv
+
 # Print JSON to stdout (pipe-friendly)
 nd-goat audit -i firewall.conf --json
+
+# Print CSV to stdout
+nd-goat audit -i firewall.conf --csv-stdout
 
 # See what vendor a file is detected as (without running checks)
 nd-goat detect mystery-config.txt
@@ -375,7 +384,9 @@ Options:
   -d, --dir PATH                  Directory of config files to audit (batch mode).
   -v, --vendor TEXT               Force vendor profile (skip auto-detect).
   -o, --output PATH               Write JSON report to this file.
+      --csv PATH                  Write CSV report to this file (one row per finding).
   -j, --json                      Print JSON report to stdout.
+      --csv-stdout                Print CSV report to stdout.
   --show-pass                     Include passing checks in table output.
   --show-manual / --hide-manual   Show or hide manual checks in table.
                                   [default: show-manual]
@@ -397,6 +408,35 @@ Usage: nd-goat vendors
 
   List all supported vendor profiles.
 ```
+
+---
+
+## Output formats
+
+| Flag | Format | Best for |
+|------|--------|----------|
+| *(none)* | Rich terminal table | Interactive review |
+| `--json` / `--output file.json` | JSON (one object or array) | Scripting, SIEM ingestion |
+| `--csv-stdout` / `--csv file.csv` | CSV, one row per finding | Spreadsheet analysis, ticket tracking |
+
+### CSV columns
+
+| Column | Description |
+|--------|-------------|
+| `file` | Basename of the audited config file |
+| `profile` | Vendor profile (e.g. `cisco_ios`) |
+| `hostname` | Detected hostname (blank if not found) |
+| `compliance_pct` | Pass % for automated checks on that file |
+| `check_id` | Check identifier, e.g. `IOS-MGMT-001` |
+| `generic_id` | Cross-vendor ID, e.g. `MGMT-001` |
+| `status` | `pass` / `fail` / `manual` / `not_applicable` |
+| `severity` | `critical` / `high` / `medium` / `low` / `info` |
+| `title` | Short check title |
+| `cis_controls` | Semicolon-separated CIS benchmark references |
+| `evidence` | Offending config lines joined with ` \| ` |
+| `remediation` | Guidance text |
+
+When using `--dir`, all findings from every file are written into **one sheet**, so you can filter by `file`, `profile`, or `status` in Excel / LibreOffice Calc.
 
 ---
 

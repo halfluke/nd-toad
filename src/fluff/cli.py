@@ -5,6 +5,7 @@ Usage examples:
   nd-goat audit -i router.conf
   nd-goat audit -i asa.conf --vendor cisco_asa
   nd-goat audit --dir ./configs/ --output report.json
+  nd-goat audit --dir ./configs/ --csv report.csv
   nd-goat vendors
 """
 
@@ -25,6 +26,7 @@ from fluff.engine.models import Status, Severity
 from fluff.engine.runner import audit
 from fluff.parsers.router import load_config
 from fluff.report.json_report import write_json
+from fluff.report.csv_report import write_csv
 
 app = typer.Typer(
     name="nd-goat",
@@ -57,7 +59,9 @@ def audit_cmd(
     directory: Optional[Path] = typer.Option(None, "--dir", "-d", help="Directory of config files to audit (batch mode)."),
     vendor: Optional[str] = typer.Option(None, "--vendor", "-v", help="Force vendor profile (skip auto-detect)."),
     output: Optional[Path] = typer.Option(None, "--output", "-o", help="Write JSON report to this file."),
+    csv_output: Optional[Path] = typer.Option(None, "--csv", help="Write CSV report to this file."),
     json_stdout: bool = typer.Option(False, "--json", "-j", help="Print JSON report to stdout."),
+    csv_stdout: bool = typer.Option(False, "--csv-stdout", help="Print CSV report to stdout."),
     show_pass: bool = typer.Option(False, "--show-pass", help="Include passing checks in table output."),
     show_manual: bool = typer.Option(True, "--show-manual/--hide-manual", help="Include manual checks in table."),
 ) -> None:
@@ -78,14 +82,15 @@ def audit_cmd(
         err_console.print("[red]Error:[/red] Provide --input or --dir.")
         raise typer.Exit(code=1)
 
+    silent_terminal = json_stdout or csv_stdout
     all_results = []
     for cfg_file in files:
-        result = _audit_file(cfg_file, vendor_override=vendor, quiet=json_stdout)
+        result = _audit_file(cfg_file, vendor_override=vendor, quiet=silent_terminal)
         if result is None:
             continue
         all_results.append(result)
 
-        if not json_stdout:
+        if not silent_terminal:
             _print_result(result, show_pass=show_pass, show_manual=show_manual)
 
     if not all_results:
@@ -100,6 +105,8 @@ def audit_cmd(
         else:
             from fluff.report.json_report import render
             console.print_json(_json.dumps([render(r) for r in all_results], indent=2))
+    elif csv_stdout:
+        print(write_csv(all_results), end="")
     elif output:
         if len(all_results) == 1:
             write_json(all_results[0], output)
@@ -112,6 +119,10 @@ def audit_cmd(
                 encoding="utf-8",
             )
             console.print(f"\n[dim]Batch report written to[/dim] {output}")
+
+    if csv_output:
+        write_csv(all_results, csv_output)
+        console.print(f"\n[dim]CSV report written to[/dim] {csv_output}")
 
 
 def _audit_file(path: Path, vendor_override: str | None, quiet: bool = False) -> object | None:
