@@ -1,11 +1,11 @@
 [project]
-name = "nd-goat"
+name = "nd-toad"
 version = "0.1.0"
 description = "Offline network device configuration security auditor with CIS L1 mapping"
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "Apache-2.0"}
-authors = [{name = "ND-GOAT Contributors"}]
+authors = [{name = "ND-TOAD Contributors"}]
 keywords = ["network", "security", "audit", "cis", "firewall", "cisco", "juniper", "palo-alto", "fortinet"]
 dependencies = [
     "ciscoconfparse2>=0.7",
@@ -23,7 +23,7 @@ dev = [
 ]
 
 [project.scripts]
-nd-goat = "fluff.cli:app"
+nd-toad = "fluff.cli:app"
 
 [build-system]
 requires = ["hatchling"]

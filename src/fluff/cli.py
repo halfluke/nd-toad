@@ -1,12 +1,12 @@
 """
-nd-goat CLI — network device configuration security auditor.
+nd-toad CLI — network device configuration security auditor.
 
 Usage examples:
-  nd-goat audit -i router.conf
-  nd-goat audit -i asa.conf --vendor cisco_asa
-  nd-goat audit --dir ./configs/ --output report.json
-  nd-goat audit --dir ./configs/ --csv report.csv
-  nd-goat vendors
+  nd-toad audit -i router.conf
+  nd-toad audit -i asa.conf --vendor cisco_asa
+  nd-toad audit --dir ./configs/ --output report.json
+  nd-toad audit --dir ./configs/ --csv report.csv
+  nd-toad vendors
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ from fluff.report.json_report import write_json
 from fluff.report.csv_report import write_csv
 
 app = typer.Typer(
-    name="nd-goat",
+    name="nd-toad",
     help="Offline network device configuration security auditor with CIS L1 mapping.",
     add_completion=False,
 )
@@ -142,7 +142,7 @@ def _audit_file(path: Path, vendor_override: str | None, quiet: bool = False) ->
         )
     else:
         if profile not in PROFILES:
-            err_console.print(f"[red]Error:[/red] Unknown vendor profile {profile!r}. Run `nd-goat vendors` to list supported profiles.")
+            err_console.print(f"[red]Error:[/red] Unknown vendor profile {profile!r}. Run `nd-toad vendors` to list supported profiles.")
             return None
         status_console.print(f"[dim]{path.name}[/dim] → using forced profile [bold]{profile}[/bold]")
 
@@ -236,7 +236,7 @@ def detect_cmd(
     console.print(f"Signals:    {', '.join(result.signals)}")
 
 
-# Entry-point alias so ``nd-goat audit`` is the canonical command name
+# Entry-point alias so ``nd-toad audit`` is the canonical command name
 app.command("audit")(audit_cmd)
 
 

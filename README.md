@@ -1,18 +1,18 @@
 ```
-                   ( ) ( )
-  [RTR]-----+       \\ //       +-----[FW]
-            |       (o o)       |
-  [SW]------+------( /||\ )-----+------[AP]
-            |       \    /      |
-  [ASA]-----+        \__/       +-----[SRX]
-         nd-goat — Network Device Goat Auditing Tool
+                     @..@
+  [RTR]-----+       (----)      +-----[FW]
+            |      ( >__< )     |
+  [SW]------+------^^-~~-^^-----+------[AP]
+            |                   |
+  [ASA]-----+                   +-----[SRX]
+          nd-toad — Network Device Toad Auditing Tool
 ```
 
-# ND-GOAT — Network Device Goat Auditing Tool
+# ND-TOAD — Network Device Toad Auditing Tool
 
 Offline network device configuration security auditor with **CIS Level 1 mapping** across 14 vendor/platform profiles.
 
-ND-GOAT reads static config files — no live device access, no API keys, no agents — and produces structured security findings mapped to CIS benchmark controls. Each finding has a `pass / fail / manual / not_applicable` status, severity, evidence (the offending config lines), and remediation guidance.
+ND-TOAD reads static config files — no live device access, no API keys, no agents — and produces structured security findings mapped to CIS benchmark controls. Each finding has a `pass / fail / manual / not_applicable` status, severity, evidence (the offending config lines), and remediation guidance.
 
 ---
 
@@ -223,7 +223,7 @@ pip install -e .
 pip install -e ".[dev]"
 ```
 
-The `nd-goat` command is registered as a console script and available immediately after install.
+The `nd-toad` command is registered as a console script and available immediately after install.
 
 ---
 
@@ -231,34 +231,34 @@ The `nd-goat` command is registered as a console script and available immediatel
 
 ```bash
 # Auto-detect vendor and audit a single config file
-nd-goat audit -i router.conf
+nd-toad audit -i router.conf
 
 # Force vendor profile (skip auto-detection)
-nd-goat audit -i asa-backup.txt --vendor cisco_asa
+nd-toad audit -i asa-backup.txt --vendor cisco_asa
 
 # Batch audit an entire directory
-nd-goat audit --dir ./network-configs/
+nd-toad audit --dir ./network-configs/
 
 # Save JSON report to file
-nd-goat audit -i firewall.conf --output report.json
+nd-toad audit -i firewall.conf --output report.json
 
 # Save CSV report to file (one row per check, great for spreadsheets)
-nd-goat audit -i firewall.conf --csv report.csv
+nd-toad audit -i firewall.conf --csv report.csv
 
 # Batch audit a directory and save all findings in one CSV
-nd-goat audit --dir ./network-configs/ --csv all-findings.csv
+nd-toad audit --dir ./network-configs/ --csv all-findings.csv
 
 # Print JSON to stdout (pipe-friendly)
-nd-goat audit -i firewall.conf --json
+nd-toad audit -i firewall.conf --json
 
 # Print CSV to stdout
-nd-goat audit -i firewall.conf --csv-stdout
+nd-toad audit -i firewall.conf --csv-stdout
 
 # See what vendor a file is detected as (without running checks)
-nd-goat detect mystery-config.txt
+nd-toad detect mystery-config.txt
 
 # List all supported vendor profiles
-nd-goat vendors
+nd-toad vendors
 ```
 
 ---
@@ -271,10 +271,10 @@ The repository ships a `samples/` directory containing **67 real and synthetic c
 
 ```bash
 # Table output per file (shows failures and manual checks)
-nd-goat audit --dir samples/
+nd-toad audit --dir samples/
 
 # JSON output — one record per file, written to stdout
-nd-goat audit --dir samples/ --json
+nd-toad audit --dir samples/ --json
 ```
 
 The `--json` flag switches the output from the rich terminal table to machine-readable JSON.
@@ -282,7 +282,7 @@ You can pipe that JSON into any tool you like — `jq`, a SIEM, a script, etc.
 The snippet below is just one example using a short Python one-liner to print a compact score per file:
 
 ```bash
-nd-goat audit --dir samples/ --json | python3 -c "
+nd-toad audit --dir samples/ --json | python3 -c "
 import json, sys
 data = json.load(sys.stdin)
 if isinstance(data, dict): data = [data]
@@ -297,25 +297,25 @@ for r in data:
 ### Audit samples for one vendor
 
 ```bash
-nd-goat audit --dir samples/cisco_ios/
-nd-goat audit --dir samples/palo_alto/
-nd-goat audit --dir samples/junos/
+nd-toad audit --dir samples/cisco_ios/
+nd-toad audit --dir samples/palo_alto/
+nd-toad audit --dir samples/junos/
 ```
 
 ### Audit a single sample with full details
 
 ```bash
 # Rich table (default) — failures highlighted in red, manual items shown
-nd-goat audit -i samples/cisco_ios/sample_01.ios
+nd-toad audit -i samples/cisco_ios/sample_01.ios
 
 # Show passing checks as well
-nd-goat audit -i samples/cisco_ios/sample_01.ios --show-pass
+nd-toad audit -i samples/cisco_ios/sample_01.ios --show-pass
 
 # JSON output — save to a file or pipe to jq / any other processor
-nd-goat audit --json -i samples/palo_alto/iron_skillet_panos_full.xml > result.json
+nd-toad audit --json -i samples/palo_alto/iron_skillet_panos_full.xml > result.json
 
 # Optional: extract only failing checks with a Python one-liner
-nd-goat audit --json -i samples/palo_alto/iron_skillet_panos_full.xml | \
+nd-toad audit --json -i samples/palo_alto/iron_skillet_panos_full.xml | \
   python3 -c "
 import json, sys
 r = json.load(sys.stdin)
@@ -327,7 +327,7 @@ for f in r['findings']:
 "
 
 # Detect only — no checks, just fingerprint
-nd-goat detect samples/nokia_sros/buraglio_vsr1.cfg
+nd-toad detect samples/nokia_sros/buraglio_vsr1.cfg
 ```
 
 ### Expected results from the sample set
@@ -372,10 +372,10 @@ See [`samples/SOURCES.md`](samples/SOURCES.md) for per-file origin and attributi
 
 ## CLI reference
 
-### `nd-goat audit`
+### `nd-toad audit`
 
 ```
-Usage: nd-goat audit [OPTIONS]
+Usage: nd-toad audit [OPTIONS]
 
   Audit one config file or a directory of configs.
 
@@ -393,18 +393,18 @@ Options:
   --help                          Show this message and exit.
 ```
 
-### `nd-goat detect`
+### `nd-toad detect`
 
 ```
-Usage: nd-goat detect FILE
+Usage: nd-toad detect FILE
 
   Detect the vendor/profile of a config file without running checks.
 ```
 
-### `nd-goat vendors`
+### `nd-toad vendors`
 
 ```
-Usage: nd-goat vendors
+Usage: nd-toad vendors
 
   List all supported vendor profiles.
 ```
@@ -469,7 +469,7 @@ bad_telnet.conf → detected cisco_ios (confidence 52%, signals: IOS version lin
 
 ### JSON output
 
-`nd-goat audit -i good.conf --json` produces:
+`nd-toad audit -i good.conf --json` produces:
 
 ```json
 {
@@ -619,14 +619,14 @@ All families feed into the same rule engine (`engine/runner.py`), so adding a ne
 ## Project structure
 
 ```
-nd_goat/
+nd_toad/
 ├── pyproject.toml
 ├── README.md
 ├── PLAN.md                         ← phase 1 design plan
 ├── docs/
 │   └── input-formats.md            ← exact input format per profile
 └── src/fluff/
-    ├── cli.py                      ← nd-goat audit / detect / vendors
+    ├── cli.py                      ← nd-toad audit / detect / vendors
     ├── detect/
     │   ├── fingerprints.py         ← score-based detection (14 profiles)
     │   └── models.py               ← DetectionResult, PROFILES
@@ -708,8 +708,8 @@ pytest --cov=fluff --cov-report=term-missing   # internal package is still named
 pytest tests/test_detect.py -v
 
 # Audit your own configs
-nd-goat audit -i /path/to/your/router.conf
-nd-goat audit --dir /path/to/configs/ --output report.json
+nd-toad audit -i /path/to/your/router.conf
+nd-toad audit --dir /path/to/configs/ --output report.json
 ```
 
 ---
@@ -766,7 +766,7 @@ All completion criteria from the design plan (`PLAN.md`) are met:
 | Full L1 catalog with `manual` entries emitted | ✅ `cis_catalog.yaml` per profile |
 | JSON report with CIS grouping and compliance summary | ✅ `cis_summary` key groups by benchmark+control |
 | Fixture test suite covering all profiles | ✅ 63 tests passing |
-| Batch directory audit | ✅ `nd-goat audit --dir ./configs/` |
+| Batch directory audit | ✅ `nd-toad audit --dir ./configs/` |
 
 ---
 
