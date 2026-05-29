@@ -129,10 +129,11 @@ def audit(config: "ParsedConfig") -> AuditResult:
 
 
 def _summarise(config: "ParsedConfig", findings: list[Finding]) -> AuditSummary:
-    automated = [f for f in findings if f.status not in (Status.MANUAL, Status.NOT_APPLICABLE)]
+    _manual_statuses = (Status.MANUAL, Status.MANUAL_FP_RISK, Status.NOT_APPLICABLE)
+    automated = [f for f in findings if f.status not in _manual_statuses]
     passed = sum(1 for f in automated if f.status == Status.PASS)
     failed = sum(1 for f in automated if f.status == Status.FAIL)
-    manual_count = sum(1 for f in findings if f.status == Status.MANUAL)
+    manual_count = sum(1 for f in findings if f.status in (Status.MANUAL, Status.MANUAL_FP_RISK))
     na_count = sum(1 for f in findings if f.status == Status.NOT_APPLICABLE)
     compliance_score = round(passed / len(automated) * 100, 1) if automated else 0.0
 

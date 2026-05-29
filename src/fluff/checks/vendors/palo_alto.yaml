@@ -166,3 +166,127 @@ checks:
     probe:
       type: manual
     remediation: "Verify WildFire analysis profile is attached to security policies via Security Profiles."
+
+  # ── Additional CIS Palo Alto Firewall L1 controls ─────────────────────────
+
+  - id: PAN-MGMT-006
+    generic_id: MGMT-006
+    title: "SSH must be enabled on management interface"
+    severity: high
+    cis:
+      - {benchmark: "CIS Palo Alto Firewall 11", control: "1.1.3", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?i)<ssh>yes</ssh>'
+    remediation: "In Device > Setup > Management > Services: enable SSH."
+
+  - id: PAN-MGMT-007
+    generic_id: MGMT-007
+    title: "Admin session idle timeout must be reasonable"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Palo Alto Firewall 11", control: "1.2.2", level: 1}
+    probe:
+      type: forbidden_regex
+      # An idle timeout of 0 means no timeout — flag this as a violation
+      pattern: '(?i)<idle-timeout>0</idle-timeout>'
+    remediation: "In Device > Setup > Management: ensure idle-timeout is not 0."
+
+  - id: PAN-AAA-002
+    generic_id: AAA-002
+    title: "Admin password profile must enforce minimum complexity"
+    severity: high
+    cis:
+      - {benchmark: "CIS Palo Alto Firewall 11", control: "2.2.3", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?i)<minimum-length>[89]|<minimum-length>[1-9][0-9]+'
+    remediation: "Configure password profile with minimum-length >= 8."
+
+  - id: PAN-AAA-003
+    generic_id: AAA-003
+    title: "Admin lockout after failed attempts must be configured"
+    severity: high
+    cis:
+      - {benchmark: "CIS Palo Alto Firewall 11", control: "2.2.4", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?i)<failed-attempts>[1-9]'
+    remediation: "Configure password profile: set failed-attempts to 5."
+
+  - id: PAN-SNMP-002
+    generic_id: SNMP-002
+    title: "SNMP must be restricted to management sources"
+    severity: high
+    cis:
+      - {benchmark: "CIS Palo Alto Firewall 11", control: "3.1.2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?ms)<snmp-setting>.*?<permitted-managers>'
+    remediation: "In Device > Setup > Operations > SNMP: configure permitted managers."
+
+  - id: PAN-LOG-002
+    generic_id: LOG-002
+    title: "Authentication and system logs must be forwarded"
+    severity: high
+    cis:
+      - {benchmark: "CIS Palo Alto Firewall 11", control: "4.1.2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?ms)<log-forwarding-profile>.*?</log-forwarding-profile>'
+    remediation: "Bind a log forwarding profile to security policies to forward auth/system events."
+
+  - id: PAN-TIME-002
+    generic_id: TIME-002
+    title: "NTP authentication must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Palo Alto Firewall 11", control: "5.1.2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?ms)<ntp-servers>.*?<authentication-type>[^<]'
+    remediation: "In Device > Setup > Services > NTP: configure authentication-type."
+
+  - id: PAN-POLICY-004
+    generic_id: POLICY-004
+    title: "Security zones must be configured and used in rules"
+    severity: high
+    cis:
+      - {benchmark: "CIS Palo Alto Firewall 11", control: "6.1.3", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?ms)<zone>.*?<entry name='
+    remediation: "Configure at least two security zones and use them in all firewall rules."
+
+  - id: PAN-POLICY-005
+    generic_id: POLICY-005
+    title: "Antivirus profile must be applied to permitted traffic"
+    severity: high
+    cis:
+      - {benchmark: "CIS Palo Alto Firewall 11", control: "6.2.2", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: "Antivirus profile assignment requires per-rule validation; cannot confirm globally."
+    remediation: "In Security Policy: bind antivirus profile to all allow rules for user traffic."
+
+  - id: PAN-POLICY-006
+    generic_id: POLICY-006
+    title: "URL filtering profile must be applied"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Palo Alto Firewall 11", control: "6.2.3", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?ms)<url-filtering>.*?</url-filtering>'
+    remediation: "In Device > Security Profiles: configure URL Filtering profile and apply to outbound rules."
+
+  - id: PAN-MGMT-008
+    generic_id: MGMT-008
+    title: "Management access logging must be enabled"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Palo Alto Firewall 11", control: "4.1.3", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?ms)<system>.*?<log-forwarding>'
+    remediation: "In Device > Setup > Logging and Reporting: configure log forwarding for system events."

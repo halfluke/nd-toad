@@ -48,7 +48,16 @@ _STATUS_COLOUR = {
     Status.PASS: "green",
     Status.FAIL: "red",
     Status.MANUAL: "yellow",
+    Status.MANUAL_FP_RISK: "dark_orange",
     Status.NOT_APPLICABLE: "dim",
+}
+
+_STATUS_LABEL = {
+    Status.PASS: "pass",
+    Status.FAIL: "fail",
+    Status.MANUAL: "manual",
+    Status.MANUAL_FP_RISK: "manual [fp risk]",
+    Status.NOT_APPLICABLE: "n/a",
 }
 
 
@@ -168,16 +177,17 @@ def _print_result(result, *, show_pass: bool, show_manual: bool) -> None:
     for f in result.findings:
         if f.status == Status.PASS and not show_pass:
             continue
-        if f.status == Status.MANUAL and not show_manual:
+        if f.status in (Status.MANUAL, Status.MANUAL_FP_RISK) and not show_manual:
             continue
 
         status_colour = _STATUS_COLOUR.get(f.status, "white")
         sev_colour = _SEV_COLOUR.get(f.severity, "white")
+        status_label = _STATUS_LABEL.get(f.status, f.status.value)
         cis_str = ", ".join(f"{c.benchmark.split()[1]} {c.control}" for c in f.cis) if f.cis else ""
 
         table.add_row(
             f.check_id,
-            f"[{status_colour}]{f.status.value}[/{status_colour}]",
+            f"[{status_colour}]{status_label}[/{status_colour}]",
             f"[{sev_colour}]{f.severity.value}[/{sev_colour}]",
             f.title,
             cis_str,

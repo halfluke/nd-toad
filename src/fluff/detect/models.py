@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-# Canonical ordered list of all 14 supported profiles
+# Canonical ordered list of all 18 supported profiles
 PROFILES: list[str] = [
     "cisco_ios",
     "cisco_asa",
     "cisco_nxos",
     "cisco_ftd",
+    "cisco_xe",
+    "cisco_xr",
     "arista_eos",
     "hpe_aruba",
     "fortios",
@@ -20,6 +22,8 @@ PROFILES: list[str] = [
     "sonicwall",
     "nokia_sros",
     "nokia_srl",
+    "huawei_vrp",
+    "f5_bigip",
 ]
 
 PROFILE_VENDOR: dict[str, str] = {
@@ -27,6 +31,8 @@ PROFILE_VENDOR: dict[str, str] = {
     "cisco_asa": "cisco",
     "cisco_nxos": "cisco",
     "cisco_ftd": "cisco",
+    "cisco_xe": "cisco",
+    "cisco_xr": "cisco",
     "arista_eos": "arista",
     "hpe_aruba": "hpe",
     "fortios": "fortinet",
@@ -37,6 +43,8 @@ PROFILE_VENDOR: dict[str, str] = {
     "sonicwall": "sonicwall",
     "nokia_sros": "nokia",
     "nokia_srl": "nokia",
+    "huawei_vrp": "huawei",
+    "f5_bigip": "f5",
 }
 
 

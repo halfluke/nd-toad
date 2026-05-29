@@ -104,7 +104,8 @@ checks:
     cis:
       - {benchmark: "Nokia SR OS Hardening", control: "6.1.1", level: 1}
     probe:
-      type: manual
+      type: manual_fp_risk
+      reason: "Requires reviewing every ip-filter entry in context; a catch-all permit regex cannot distinguish intentional management-plane permits from genuine any-to-any holes."
     remediation: "Review all ip-filter entries under configure filter. Verify no catch-all permit exists."
 
   - id: SROS-POLICY-002
@@ -118,3 +119,592 @@ checks:
       # Classic CLI: cpm-filter {; MD-CLI: /configure system security cpm-filter
       pattern: '(?m)(cpm-filter\s*\{|/configure system security cpm-filter)'
     remediation: "Under configure system security: configure cpm-filter to limit management plane traffic."
+
+  # ── Management plane hardening ───────────────────────────────────────────
+
+  - id: SROS-MGMT-002
+    generic_id: MGMT-002
+    title: "SSH server must not be explicitly disabled"
+    description: "SR OS enables SSH by default; an explicit 'no ssh' removes the only encrypted management path."
+    severity: critical
+    cis:
+      - {benchmark: "Nokia SR OS Hardening", control: "1.1.2", level: 1}
+    probe:
+      type: forbidden_regex
+      # Classic CLI: 'no ssh' directly disables the SSH server
+      # MD-CLI: '/configure system security ssh admin-state disable'
+      pattern: '(?m)(^\s*no\s+ssh\s*$|/configure system security ssh admin-state disable)'
+    remediation: "Remove 'no ssh' from configure system security. MD-CLI: set /configure system security ssh admin-state enable."
+
+  - id: SROS-MGMT-005
+    generic_id: MGMT-005b
+    title: "FTP server must be disabled"
+    description: "FTP transmits credentials in cleartext. SR OS leaves it off by default; the 'ftp-server' stanza enables it."
+    severity: high
+    cis:
+      - {benchmark: "Nokia SR OS Hardening", control: "1.1.3", level: 1}
+    probe:
+      type: forbidden_regex
+      # Classic CLI: 'ftp-server' (bare, no leading 'no') enables FTP
+      # MD-CLI: '/configure system ftp admin-state enable'
+      pattern: '(?m)(^\s*ftp-server\s*$|/configure system ftp admin-state enable)'
+    remediation: "Remove 'ftp-server' from configure system security. MD-CLI: set /configure system ftp admin-state disable."
+
+  - id: SROS-MGMT-006
+    generic_id: MGMT-006
+    title: "TFTP server must be disabled"
+    description: "TFTP has no authentication. If enabled it allows anonymous file access to the router."
+    severity: high
+    cis:
+      - {benchmark: "Nokia SR OS Hardening", control: "1.1.4", level: 1}
+    probe:
+      type: forbidden_regex
+      # Classic CLI: 'tftp-server' enables TFTP; MD-CLI equivalent
+      pattern: '(?m)(^\s*tftp-server\s*$|/configure system tftp admin-state enable)'
+    remediation: "Remove 'tftp-server' from configure system. MD-CLI: /configure system tftp admin-state disable."
+
+  - id: SROS-MGMT-007
+    generic_id: MGMT-007
+    title: "Pre-login banner must be configured"
+    description: "A legal warning banner is required before authentication for compliance and legal defensibility."
+    severity: medium
+    cis:
+      - {benchmark: "Nokia SR OS Hardening", control: "1.2.2", level: 1}
+    probe:
+      type: required_regex
+      # Classic CLI: pre-login-message under configure system login-control
+      # MD-CLI: /configure system login-control pre-login-message
+      pattern: '(?m)(pre-login-message\s+"|\s+pre-login-message\s+|/configure system login-control pre-login-message)'
+    remediation: "Configure: configure system login-control pre-login-message \"<legal notice>\"."
+
+  - id: SROS-MGMT-008
+    generic_id: MGMT-008
+    title: "Console idle timeout must be configured"
+    description: "An unattended authenticated session is an open attack window. Idle timeout forces re-authentication."
+    severity: medium
+    cis:
+      - {benchmark: "Nokia SR OS Hardening", control: "1.2.3", level: 1}
+    probe:
+      type: required_regex
+      # Classic: idle-timeout <n> (non-zero) under configure system login-control or configure system security
+      # MD-CLI: /configure system login-control idle-timeout
+      pattern: '(?m)(^\s*idle-timeout\s+[1-9]|/configure system (login-control|security)\s+.*idle-timeout\s+[1-9])'
+    remediation: "Set: configure system login-control idle-timeout 10 (minutes)."
+
+  - id: SROS-MGMT-009
+    generic_id: MGMT-009
+    title: "HTTP management server must be disabled"
+    description: "HTTP transmits management traffic in cleartext. Only HTTPS should be permitted for web management."
+    severity: high
+    cis:
+      - {benchmark: "Nokia SR OS Hardening", control: "1.1.5", level: 1}
+    probe:
+      type: forbidden_regex
+      # Classic CLI: 'http-server' enables plain HTTP; HTTPS is separate
+      # MD-CLI: '/configure system management-interface http-redirect false' or http admin-state enable
+      pattern: '(?m)(^\s*http-server\s*$|/configure system management-interface.*http\s+admin-state enable)'
+    remediation: "Remove 'http-server' from configure system. Use HTTPS only (/configure system management-interface https)."
+
+  - id: SROS-MGMT-010
+    generic_id: MGMT-010
+    title: "Password minimum length must be at least 8 characters"
+    description: "Short passwords are trivially brute-forced. Eight characters is the CIS L1 minimum."
+    severity: high
+    cis:
+      - {benchmark: "Nokia SR OS Hardening", control: "1.4.1", level: 1}
+    probe:
+      type: required_regex
+      # Classic/MD-CLI: minimum-length <n> where n >= 8
+      # Matches 8, 9, or any two-digit number
+      pattern: '(?m)(minimum-length\s+([89]|[1-9][0-9]+)|/configure system security password minimum-length\s+([89]|[1-9][0-9]+))'
+    remediation: "Set: configure system security password minimum-length 8."
+
+  - id: SROS-MGMT-011
+    generic_id: MGMT-011
+    title: "Password complexity must be enabled"
+    description: "Complexity requirements prevent dictionary and common-password attacks."
+    severity: medium
+    cis:
+      - {benchmark: "Nokia SR OS Hardening", control: "1.4.2", level: 1}
+    probe:
+      type: required_regex
+      # Classic CLI: 'complexity' under configure system security password
+      # MD-CLI: /configure system security password complexity true
+      pattern: '(?m)(^\s*complexity\s*$|/configure system security password complexity\s+(true|enable))'
+    remediation: "Set: configure system security password complexity (under configure system security password)."
+
+  - id: SROS-MGMT-012
+    generic_id: MGMT-012
+    title: "Password aging must be configured"
+    description: "Mandatory password rotation limits the window of credential exposure."
+    severity: medium
+    cis:
+      - {benchmark: "Nokia SR OS Hardening", control: "1.4.3", level: 1}
+    probe:
+      type: required_regex
+      # Classic: aging <days>; MD-CLI: /configure system security password aging <days>
+      pattern: '(?m)(^\s*aging\s+[1-9][0-9]*|/configure system security password aging\s+[1-9][0-9]*)'
+    remediation: "Set: configure system security password aging 90 (days)."
+
+  - id: SROS-MGMT-013
+    generic_id: MGMT-013
+    title: "Failed login lockout must be configured"
+    description: "Account lockout after repeated failures prevents online brute-force attacks."
+    severity: high
+    cis:
+      - {benchmark: "Nokia SR OS Hardening", control: "1.4.4", level: 1}
+    probe:
+      type: required_regex
+      # Classic: attempts <n> time <t> lockout <l>; MD-CLI: /configure system security password attempts
+      pattern: '(?m)(^\s*attempts\s+[1-9]\d*\s+time\s+[1-9]|/configure system security password attempts\s+[1-9])'
+    remediation: "Set: configure system security password attempts 5 time 5 lockout 30."
+
+  - id: SROS-MGMT-014
+    generic_id: MGMT-014
+    title: "SSH must use only strong MACs and ciphers"
+    description: "Weak SSH algorithms allow downgrade attacks. Restrict to AES-CTR and SHA-2."
+    severity: medium
+    cis:
+      - {benchmark: "Nokia SR OS Hardening", control: "1.3.2", level: 1}
+    probe:
+      type: forbidden_regex
+      # Classic CLI: 'hmac-md5' or '3des-cbc' or 'arcfour' indicate weak algorithms enabled
+      # MD-CLI: /configure system security ssh mac-algorithm hmac-md5 or cipher-algorithm 3des-cbc
+      pattern: '(?mi)(hmac-md5\b|3des-cbc|arcfour|blowfish|/configure system security ssh (mac-algorithm hmac-md5|cipher-algorithm (3des-cbc|arcfour|blowfish)))'
+    remediation: "Under configure system security ssh: remove hmac-md5, 3des-cbc, arcfour from permitted algorithm lists."
+
+  - id: SROS-MGMT-015
+    generic_id: MGMT-015
+    title: "System contact must be configured"
+    description: "System contact is required for asset identification and incident response."
+    severity: low
+    cis:
+      - {benchmark: "Nokia SR OS Hardening", control: "1.5.1", level: 1}
+    probe:
+      type: required_regex
+      # Classic: contact "..." under configure system; MD-CLI: /configure system contact
+      pattern: '(?m)(^\s*contact\s+".+"|/configure system contact\s+"?[^"\s])'
+    remediation: "Set: configure system contact \"<NOC team name or email>\"."
+
+  - id: SROS-MGMT-016
+    generic_id: MGMT-016
+    title: "System location must be configured"
+    description: "System location assists with physical asset tracking and incident triage."
+    severity: low
+    cis:
+      - {benchmark: "Nokia SR OS Hardening", control: "1.5.2", level: 1}
+    probe:
+      type: required_regex
+      # Classic: location "..." under configure system; MD-CLI: /configure system location
+      pattern: '(?m)(^\s*location\s+".+"|/configure system location\s+"?[^"\s])'
+    remediation: "Set: configure system location \"<site or rack identifier>\"."
+
+  - id: SROS-MGMT-017
+    generic_id: MGMT-017
+    title: "gRPC must use TLS when enabled"
+    description: "Unencrypted gRPC exposes streaming telemetry and model-driven configuration over cleartext."
+    severity: high
+    cis:
+      - {benchmark: "Nokia SR OS Hardening", control: "1.1.6", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: "Requires conditional logic: only an issue if gRPC is enabled AND tls-server-profile is absent. Simple regex cannot express this conjunction reliably."
+    remediation: "Under /configure system grpc: set tls-server-profile to a configured TLS profile. If gRPC is not needed, remove the grpc block."
+
+  # ── Authentication, Authorisation, Accounting ────────────────────────────
+
+  - id: SROS-AAA-002
+    generic_id: AAA-002
+    title: "Authentication order must prefer external AAA before local fallback"
+    description: "Placing local accounts first bypasses centralised AAA, allowing login even when AAA is unreachable — this is acceptable only as last resort."
+    severity: high
+    cis:
+      - {benchmark: "Nokia SR OS Hardening", control: "2.1.2", level: 1}
+    probe:
+      type: forbidden_regex
+      # Classic CLI: authentication-order local ... means local is checked first — violation
+      # MD-CLI equivalent would also have local as first priority
+      pattern: '(?m)^\s*authentication-order\s+local\b'
+    remediation: "Set: configure system security aaa authentication-order tacplus radius local (or radius tacplus local)."
+
+  - id: SROS-AAA-003
+    generic_id: AAA-003
+    title: "TACACS+ or RADIUS accounting must be configured"
+    description: "Accounting provides a non-repudiation audit trail for all privileged actions on the device."
+    severity: high
+    cis:
+      - {benchmark: "Nokia SR OS Hardening", control: "2.3.1", level: 1}
+    probe:
+      type: required_regex
+      # Classic CLI: accounting under aaa or under tacplus/radius server configuration
+      # MD-CLI: /configure system security aaa accounting
+      pattern: '(?m)(^\s*accounting\s*(start-stop|stop-only|enable|\{)|/configure system security aaa accounting)'
+    remediation: "Configure accounting under configure system security aaa (TACACS+ start-stop or RADIUS accounting)."
+
+  - id: SROS-AAA-004
+    generic_id: AAA-004
+    title: "RADIUS server must be configured as AAA backup or primary"
+    description: "At least one RADIUS server provides resilience if TACACS+ is unavailable."
+    severity: medium
+    cis:
+      - {benchmark: "Nokia SR OS Hardening", control: "2.2.1", level: 1}
+    probe:
+      type: required_regex
+      # Classic: radius { server ... }; MD-CLI: /configure system security aaa remote-servers radius
+      pattern: '(?m)(^\s*radius\s*\{|/configure system security aaa remote-servers radius)'
+    remediation: "Configure RADIUS server under configure system security aaa."
+
+  - id: SROS-AAA-005
+    generic_id: AAA-005
+    title: "TACACS+ server must be configured"
+    description: "TACACS+ provides per-command authorisation and fine-grained privilege control."
+    severity: high
+    cis:
+      - {benchmark: "Nokia SR OS Hardening", control: "2.2.2", level: 1}
+    probe:
+      type: required_regex
+      # Classic: tacplus { server ... }; MD-CLI: /configure system security aaa remote-servers tacplus
+      pattern: '(?m)(^\s*tacplus\s*\{|/configure system security aaa remote-servers tacplus)'
+    remediation: "Configure TACACS+ server under configure system security aaa."
+
+  # ── SNMP ─────────────────────────────────────────────────────────────────
+
+  - id: SROS-SNMP-002
+    generic_id: SNMP-002
+    title: "SNMPv1/v2c communities must not be configured"
+    description: "v1/v2c communities are cleartext authentication. They must not exist alongside the mandatory SNMPv3 configuration."
+    severity: critical
+    cis:
+      - {benchmark: "Nokia SR OS Hardening", control: "5.1.2", level: 1}
+    probe:
+      type: forbidden_regex
+      # Classic CLI: community "name" r  or  community "name" rw  (no hash keyword = v1/v2c)
+      # v3 communities use 'hash' after the name; v1/v2c use bare 'r' or 'rw'
+      pattern: '(?m)^\s*community\s+"[^"]+"\s+(r|rw)\s*(\{|$)'
+    remediation: "Remove all 'community \"X\" r' or 'community \"X\" rw' lines from configure system snmp."
+
+  - id: SROS-SNMP-003
+    generic_id: SNMP-003
+    title: "SNMP trap receiver must be configured"
+    description: "Without a trap receiver, critical hardware and security events are silently lost."
+    severity: high
+    cis:
+      - {benchmark: "Nokia SR OS Hardening", control: "5.2.1", level: 1}
+    probe:
+      type: required_regex
+      # Classic CLI: under configure log: 'to snmp' in a log-id destination
+      # MD-CLI: /configure log log-id ... destination snmp
+      # Also: trap-target under snmp configuration
+      pattern: '(?m)(^\s*to\s+snmp\b|destination\s+snmp\b|trap-target\s+|/configure log log-id.*destination.*snmp)'
+    remediation: "Create a log destination targeting SNMP under configure log."
+
+  - id: SROS-SNMP-004
+    generic_id: SNMP-004
+    title: "SNMPv3 access group must use authentication and privacy"
+    description: "SNMPv3 auth-only mode is insufficient; auth+priv ensures both integrity and confidentiality of SNMP traffic."
+    severity: high
+    cis:
+      - {benchmark: "Nokia SR OS Hardening", control: "5.1.3", level: 1}
+    probe:
+      type: required_regex
+      # Classic: access-group ... security-level privacy or auth-privacy
+      # MD-CLI: /configure system security snmp access-group ... security-level privacy
+      pattern: '(?mi)(security-level\s+privacy|auth-privacy|/configure system security snmp access-group.*security-level\s+privacy)'
+    remediation: "Set SNMPv3 access-group security-level to privacy under configure system security snmp."
+
+  - id: SROS-SNMP-005
+    generic_id: SNMP-005
+    title: "SNMP access must be restricted by source address"
+    description: "Without source restrictions any host can query SNMP. The management-access-filter or SNMP access-group source must be limited."
+    severity: high
+    cis:
+      - {benchmark: "Nokia SR OS Hardening", control: "5.2.2", level: 1}
+    probe:
+      type: required_regex
+      # Nokia SR OS: access restriction via src-ip in access-group or via management-access-filter
+      # Check that at least a source-ip constraint or mask is in the snmp config
+      pattern: '(?m)(src-ip\s+\d{1,3}\.\d{1,3}|source\s+\d{1,3}\.\d{1,3}|/configure system security snmp.*src-ip)'
+    remediation: "Add source-ip restrictions to the SNMPv3 access-group or configure management-access-filter to restrict SNMP source addresses."
+
+  # ── Logging ───────────────────────────────────────────────────────────────
+
+  - id: SROS-LOG-002
+    generic_id: LOG-002
+    title: "Security event category must be included in log destinations"
+    description: "Security events (authentication failures, ACL hits) must be forwarded to remote SIEM."
+    severity: high
+    cis:
+      - {benchmark: "Nokia SR OS Hardening", control: "3.2.1", level: 1}
+    probe:
+      type: required_regex
+      # Classic: 'from security' inside a log-id block; MD-CLI: /configure log log-id ... from ... security
+      pattern: '(?m)(^\s*from\s+security\b|/configure log log-id.*from.*security)'
+    remediation: "Under configure log log-id X: add 'from security' to forward security events."
+
+  - id: SROS-LOG-003
+    generic_id: LOG-003
+    title: "Change event category must be logged"
+    description: "All configuration changes must be captured for audit and forensic purposes."
+    severity: high
+    cis:
+      - {benchmark: "Nokia SR OS Hardening", control: "3.2.2", level: 1}
+    probe:
+      type: required_regex
+      # Classic: 'from change' in log-id block; MD-CLI: /configure log log-id ... from ... change
+      pattern: '(?m)(^\s*from\s+change\b|/configure log log-id.*from.*change)'
+    remediation: "Under configure log log-id X: add 'from change' to capture configuration changes."
+
+  - id: SROS-LOG-004
+    generic_id: LOG-004
+    title: "Debug logging must be disabled in production"
+    description: "Debug-level logging floods storage, may expose sensitive data, and indicates a non-production configuration."
+    severity: medium
+    cis:
+      - {benchmark: "Nokia SR OS Hardening", control: "3.3.1", level: 1}
+    probe:
+      type: forbidden_regex
+      # Classic: 'debug-level' or 'debug-type' under configure log filters (should not be in production)
+      # MD-CLI: /configure log filter ... default-action forward with debug severity
+      pattern: '(?mi)(^\s*debug-level\s*$|severity\s+debug\s+action\s+forward|/configure log filter.*debug.*forward)'
+    remediation: "Remove debug-level log filters. Severity should be warning or higher for remote syslog."
+
+  - id: SROS-LOG-005
+    generic_id: LOG-005
+    title: "Syslog severity must be set to warning or more severe"
+    description: "Logging at info or debug level to remote syslog creates excessive noise and may miss critical events."
+    severity: medium
+    cis:
+      - {benchmark: "Nokia SR OS Hardening", control: "3.2.3", level: 1}
+    probe:
+      type: forbidden_regex
+      # Explicit info/debug severity forwarded to syslog is a misconfiguration
+      pattern: '(?mi)(severity\s+(info|debug)\s+action\s+forward|to\s+syslog.*severity\s+(info|debug))'
+    remediation: "Set syslog severity threshold to warning or higher in the log filter destination."
+
+  - id: SROS-LOG-006
+    generic_id: LOG-006
+    title: "At least one log destination must target remote syslog"
+    description: "Local memory-only logs are lost on reboot and can be tampered with. Remote syslog is required."
+    severity: high
+    cis:
+      - {benchmark: "Nokia SR OS Hardening", control: "3.1.2", level: 1}
+    probe:
+      type: required_regex
+      # Classic: 'to syslog' in a log-id; MD-CLI: destination syslog
+      pattern: '(?m)(^\s*to\s+syslog\b|destination\s+syslog\b|/configure log log-id.*to\s+syslog)'
+    remediation: "Configure at least one log-id with 'to syslog' targeting the remote syslog server."
+
+  # ── Time / NTP ─────────────────────────────────────────────────────────────
+
+  - id: SROS-TIME-002
+    generic_id: TIME-002
+    title: "NTP authentication keys must be configured"
+    description: "Unauthenticated NTP allows an attacker to manipulate device time, which invalidates logs and certificates."
+    severity: high
+    cis:
+      - {benchmark: "Nokia SR OS Hardening", control: "4.1.2", level: 1}
+    probe:
+      type: required_regex
+      # Classic: authentication-key <id> md5 "..." under configure system time ntp
+      # MD-CLI: /configure system time ntp authentication-key
+      pattern: '(?m)(authentication-key\s+[0-9]+\s+(md5|hmac|sha)|/configure system time ntp authentication-key)'
+    remediation: "Configure NTP authentication keys under configure system time ntp."
+
+  - id: SROS-TIME-003
+    generic_id: TIME-003
+    title: "NTP servers must require authentication"
+    description: "Even if keys are configured, servers must be set to use them. Servers without 'authenticate' flag ignore authentication."
+    severity: high
+    cis:
+      - {benchmark: "Nokia SR OS Hardening", control: "4.1.3", level: 1}
+    probe:
+      type: forbidden_regex
+      # Classic: NTP server entry with 'no-auth' or missing 'authenticate' keyword
+      # 'server X.X.X.X no-auth' explicitly bypasses authentication
+      pattern: '(?m)(^\s*server\s+\S+\s+no-auth\b|/configure system time ntp server.*no-auth)'
+    remediation: "Remove 'no-auth' from all NTP server entries. Each server should have 'authenticate key-id <id>'."
+
+  # ── Services / Protocol security ─────────────────────────────────────────
+
+  - id: SROS-SVC-001
+    generic_id: SVC-001
+    title: "LLDP must be disabled globally"
+    description: "LLDP advertises device type, capabilities, and interface details to adjacent devices — an information disclosure risk on external links."
+    severity: medium
+    cis:
+      - {benchmark: "Nokia SR OS Hardening", control: "7.1.1", level: 1}
+    probe:
+      type: forbidden_regex
+      # SR OS: LLDP disabled by default; flag explicit enablement
+      # Classic: 'lldp {' under configure system or configure port
+      # MD-CLI: /configure system lldp admin-state enable
+      pattern: '(?m)(^\s*lldp\s*\{\s*$|/configure system lldp admin-state enable)'
+    remediation: "Do not enable LLDP globally. If needed for specific internal ports only, configure per-port and disable globally."
+
+  - id: SROS-SVC-002
+    generic_id: SVC-002
+    title: "BGP session authentication must be configured on all peers"
+    description: "BGP without MD5 authentication allows session hijacking and route injection from spoofed TCP RSTs or SYNs."
+    severity: critical
+    cis:
+      - {benchmark: "Nokia SR OS Hardening", control: "7.2.1", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: "Requires confirming every BGP peer group and neighbor has authentication-key set. Topology-dependent; a missing peer auth is not visible in all config exports."
+    remediation: "Under configure router bgp group X neighbor Y: set authentication-key <key>."
+
+  - id: SROS-SVC-003
+    generic_id: SVC-003
+    title: "LDP sessions must use authentication"
+    description: "LDP without authentication allows label spoofing which can redirect MPLS traffic."
+    severity: high
+    cis:
+      - {benchmark: "Nokia SR OS Hardening", control: "7.2.2", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: "Requires checking each LDP neighbor/interface; authentication may be configured per-interface. Cannot be expressed as a global presence check without false passes on partial configs."
+    remediation: "Under configure router ldp: set authentication-key or configure per-interface."
+
+  - id: SROS-SVC-004
+    generic_id: SVC-004
+    title: "IS-IS must use HMAC-MD5 or SHA authentication"
+    description: "IS-IS without authentication allows injection of false LSPs which can hijack routing."
+    severity: high
+    cis:
+      - {benchmark: "Nokia SR OS Hardening", control: "7.2.3", level: 1}
+    probe:
+      type: required_regex
+      # Classic: under configure router isis: authentication-key or hmac-md5 or sha-256
+      # MD-CLI: /configure router isis ... authentication
+      pattern: '(?mi)(isis.*authentication|authentication-key.*isis|/configure router isis.*authentication|hmac-md5.*isis|isis.*hmac-md5)'
+    remediation: "Under configure router isis: configure authentication-type hmac-md5 and authentication-key."
+
+  - id: SROS-SVC-005
+    generic_id: SVC-005
+    title: "OSPF/OSPFv3 must use MD5 or SHA authentication"
+    description: "Unauthenticated OSPF allows injection of false LSAs which can divert traffic."
+    severity: high
+    cis:
+      - {benchmark: "Nokia SR OS Hardening", control: "7.2.4", level: 1}
+    probe:
+      type: required_regex
+      # Classic: under configure router ospf: authentication-type or message-digest
+      # MD-CLI: /configure router ospf ... authentication-type
+      pattern: '(?mi)(ospf.*authentication|authentication-type.*ospf|/configure router ospf.*authentication|message-digest-key)'
+    remediation: "Under configure router ospf: set authentication-type md5 or sha-256 on all interfaces."
+
+  - id: SROS-SVC-006
+    generic_id: SVC-006
+    title: "RSVP-TE must use authentication if deployed"
+    description: "Unauthenticated RSVP allows signalling spoofing which can create or tear down TE tunnels."
+    severity: medium
+    cis:
+      - {benchmark: "Nokia SR OS Hardening", control: "7.2.5", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: "RSVP may not be deployed; if present, per-interface auth must be checked. Conditional automation without scoped_regex risks false passes."
+    remediation: "Under configure router rsvp interface X: set authentication-key."
+
+  - id: SROS-SVC-007
+    generic_id: SVC-007
+    title: "uRPF must be considered on external-facing interfaces"
+    description: "Unicast RPF drops packets with spoofed source addresses before they reach the routing table."
+    severity: medium
+    cis:
+      - {benchmark: "Nokia SR OS Hardening", control: "7.3.1", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: "uRPF must be evaluated per-interface with knowledge of which interfaces are external-facing. A global presence check cannot validate correct application."
+    remediation: "Under configure router interface X: enable unicast-reverse-path-forwarding strict or loose."
+
+  # ── Control plane / Policy ───────────────────────────────────────────────
+
+  - id: SROS-POLICY-003
+    generic_id: POLICY-003
+    title: "CPM filter must include ICMP rate-limiting entries"
+    description: "Unrestricted ICMP to the CPM can exhaust CPU through ping floods or amplification."
+    severity: high
+    cis:
+      - {benchmark: "Nokia SR OS Hardening", control: "6.2.2", level: 1}
+    probe:
+      type: required_regex
+      # Classic: inside cpm-filter: an entry matching protocol 1 (ICMP) with rate or policer
+      # Or: match protocol icmp or match icmp-type under a cpm-filter entry
+      pattern: '(?mi)(cpm-filter.*icmp|protocol\s+icmp.*rate|policer.*icmp|match.*icmp.*cpm|/configure system security cpm-filter.*icmp)'
+    remediation: "Add a cpm-filter entry matching protocol icmp with a rate-limiter or policer."
+
+  - id: SROS-POLICY-004
+    generic_id: POLICY-004
+    title: "CPM filter must include BGP (TCP/179) rate-limiting"
+    description: "BGP session flooding to the control plane can exhaust CPU. Rate-limit TCP/179 in the CPM filter."
+    severity: high
+    cis:
+      - {benchmark: "Nokia SR OS Hardening", control: "6.2.3", level: 1}
+    probe:
+      type: required_regex
+      # Classic: cpm-filter entry with dst-port 179 or protocol tcp and port 179
+      pattern: '(?m)(dst-port\s+179|destination-port\s+179|/configure system security cpm-filter.*port\s+179)'
+    remediation: "Add a cpm-filter entry for TCP dst-port 179 (BGP) with a rate-limiter."
+
+  - id: SROS-POLICY-005
+    generic_id: POLICY-005
+    title: "BGP maximum-prefix limit must be set on external peers"
+    description: "Without a prefix limit a misconfigured or malicious BGP peer can inject a full DFZ table and crash the router."
+    severity: high
+    cis:
+      - {benchmark: "Nokia SR OS Hardening", control: "7.4.1", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: "Maximum prefix limits are per-peer-group and must be validated against the expected prefix count for each peer. Automation cannot determine the correct threshold without topology context."
+    remediation: "Under configure router bgp group X: set maximum-prefix <n> (typically 10–20% above current peer prefix count)."
+
+  - id: SROS-POLICY-006
+    generic_id: POLICY-006
+    title: "Routing policy must filter bogon prefixes on external BGP peers"
+    description: "Accepting RFC 1918/bogon prefixes from external peers can cause route leakage and policy bypass."
+    severity: high
+    cis:
+      - {benchmark: "Nokia SR OS Hardening", control: "7.4.2", level: 1}
+    probe:
+      type: manual
+      reason: "Requires reviewing the import policy chain for each external BGP peer to confirm bogon prefix rejection. Cannot be validated without knowing which peers are external."
+    remediation: "Apply an import policy to all external BGP peers that rejects RFC 1918, 240/4, 0/8 and similar bogon prefixes."
+
+  - id: SROS-MGMT-018
+    generic_id: MGMT-018
+    title: "NETCONF must use SSH as transport"
+    description: "NETCONF over cleartext HTTP/SOAP is deprecated and insecure. Only SSH transport should be permitted."
+    severity: high
+    cis:
+      - {benchmark: "Nokia SR OS Hardening", control: "1.1.7", level: 1}
+    probe:
+      type: forbidden_regex
+      # Explicit NETCONF over HTTP/SOAP: 'netconf soap' or 'soap http' in old TiMOS versions
+      # MD-CLI: /configure system management-interface netconf ... http or soap
+      pattern: '(?mi)(^\s*soap\s+(http|https)\b|netconf.*soap|/configure system management-interface.*soap)'
+    remediation: "Disable NETCONF over SOAP/HTTP. Use only /configure system management-interface netconf ssh-server."
+
+  - id: SROS-POLICY-008
+    generic_id: POLICY-008
+    title: "CPM filter default action must be set to drop"
+    description: "Without an explicit drop default, the CPM filter falls back to accept — defeating the purpose of the filter."
+    severity: critical
+    cis:
+      - {benchmark: "Nokia SR OS Hardening", control: "6.2.4", level: 1}
+    probe:
+      type: required_regex
+      # Classic: default-action drop under cpm-filter; MD-CLI: /configure system security cpm-filter default-action
+      pattern: '(?m)(default-action\s+drop|/configure system security cpm-filter default-action drop)'
+    remediation: "Under configure system security cpm-filter: add 'default-action drop'."
+
+  - id: SROS-POLICY-007
+    generic_id: POLICY-007
+    title: "ACL deny-by-default must be the final entry in all filters"
+    description: "An implicit or explicit deny at the end of every filter ensures unmatched traffic is not accidentally permitted."
+    severity: high
+    cis:
+      - {benchmark: "Nokia SR OS Hardening", control: "6.1.2", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: "Requires checking the last entry in every ip-filter; SR OS implicit deny behaviour varies by filter type. Positional checks require scoped_regex engine support."
+    remediation: "Ensure every ip-filter has a final entry with action drop (or 'default-action drop')."

@@ -1,0 +1,431 @@
+# Huawei VRP compliance checks
+# Source: Huawei VRP Security Hardening Guide (Huawei Enterprise Networking)
+# Used on: NE, CE, AR, S series devices
+
+vendor: huawei
+profile: huawei_vrp
+checks:
+
+  # ── Management access ─────────────────────────────────────────────────────
+
+  - id: VRP-MGMT-001
+    generic_id: MGMT-001
+    title: "Telnet must be disabled on user-interfaces"
+    severity: critical
+    cis:
+      - {benchmark: "Huawei VRP Hardening Guide", control: "MGMT-1", level: 1}
+    probe:
+      type: forbidden_regex
+      pattern: '(?m)^\s+protocol inbound telnet'
+    remediation: "On all user-interface vty: protocol inbound ssh (replaces telnet)"
+
+  - id: VRP-MGMT-002
+    generic_id: MGMT-002
+    title: "SSH server must be enabled"
+    severity: critical
+    cis:
+      - {benchmark: "Huawei VRP Hardening Guide", control: "MGMT-2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)(^stelnet server enable|^\s+protocol inbound ssh)'
+    remediation: "stelnet server enable"
+
+  - id: VRP-MGMT-003
+    generic_id: MGMT-003
+    title: "SSH version 2 must be configured"
+    severity: high
+    cis:
+      - {benchmark: "Huawei VRP Hardening Guide", control: "MGMT-3", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^ssh server version 2'
+    remediation: "ssh server version 2"
+
+  - id: VRP-MGMT-004
+    generic_id: MGMT-004
+    title: "HTTP server must be disabled"
+    severity: high
+    cis:
+      - {benchmark: "Huawei VRP Hardening Guide", control: "MGMT-4", level: 1}
+    probe:
+      type: forbidden_regex
+      pattern: '(?m)^http server enable'
+    remediation: "undo http server enable"
+
+  - id: VRP-MGMT-005
+    generic_id: MGMT-005
+    title: "Idle timeout must be configured on VTY interfaces"
+    severity: medium
+    cis:
+      - {benchmark: "Huawei VRP Hardening Guide", control: "MGMT-5", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?ms)user-interface vty.+?idle-timeout ([0-9]|1[0-5])\s'
+    remediation: "Under user-interface vty 0 4: idle-timeout 10 0"
+
+  - id: VRP-MGMT-006
+    generic_id: MGMT-006
+    title: "Login banner must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "Huawei VRP Hardening Guide", control: "MGMT-6", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)(^header (login|shell)\b|^set (login-banner|pre-login-banner))'
+    remediation: "header login information \"Authorized access only\""
+
+  - id: VRP-MGMT-007
+    generic_id: MGMT-007
+    title: "Management interface source must be restricted"
+    severity: high
+    cis:
+      - {benchmark: "Huawei VRP Hardening Guide", control: "MGMT-7", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s+acl \d+'
+      scope: "user-interface vty"
+    remediation: "Under user-interface vty: acl <acl-number> inbound"
+
+  - id: VRP-MGMT-008
+    generic_id: MGMT-008
+    title: "IP source routing must be disabled"
+    severity: high
+    cis:
+      - {benchmark: "Huawei VRP Hardening Guide", control: "MGMT-8", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^undo ip source-route'
+    remediation: "undo ip source-route"
+
+  # ── AAA ───────────────────────────────────────────────────────────────────
+
+  - id: VRP-AAA-001
+    generic_id: AAA-001
+    title: "AAA must be enabled"
+    severity: critical
+    cis:
+      - {benchmark: "Huawei VRP Hardening Guide", control: "AAA-1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^aaa\s*$'
+    remediation: "aaa (enter AAA mode)"
+
+  - id: VRP-AAA-002
+    generic_id: AAA-002
+    title: "HWTACACS server must be configured"
+    severity: high
+    cis:
+      - {benchmark: "Huawei VRP Hardening Guide", control: "AAA-2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^(hwtacacs|hwtacacs-server)\s'
+    remediation: "hwtacacs server template <name>\n server authentication <ip> port 49"
+
+  - id: VRP-AAA-003
+    generic_id: AAA-003
+    title: "Authentication scheme must use HWTACACS or RADIUS"
+    severity: high
+    cis:
+      - {benchmark: "Huawei VRP Hardening Guide", control: "AAA-3", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?ms)authentication-scheme\s+\S+.+authentication-mode (hwtacacs|radius)'
+    remediation: "In aaa > authentication-scheme: authentication-mode hwtacacs local"
+
+  - id: VRP-AAA-004
+    generic_id: AAA-004
+    title: "Accounting scheme must be configured"
+    severity: high
+    cis:
+      - {benchmark: "Huawei VRP Hardening Guide", control: "AAA-4", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s+accounting-scheme\s+\S+'
+    remediation: "In aaa: accounting-scheme <name> with accounting-mode hwtacacs"
+
+  - id: VRP-AAA-005
+    generic_id: AAA-005
+    title: "Password minimum length must be configured"
+    severity: high
+    cis:
+      - {benchmark: "Huawei VRP Hardening Guide", control: "AAA-5", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s+password (min-len|minimum-length)\s+([89]|[1-9][0-9]+)'
+    remediation: "In aaa domain default: password min-len 8"
+
+  - id: VRP-AAA-006
+    generic_id: AAA-006
+    title: "Login failed attempt lockout must be configured"
+    severity: high
+    cis:
+      - {benchmark: "Huawei VRP Hardening Guide", control: "AAA-6", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s+(login-failed-times|login-limit-num)\s+[1-9]'
+    remediation: "In aaa local-user policy: login-failed-times 5; lockout-period 10"
+
+  - id: VRP-AAA-007
+    generic_id: AAA-007
+    title: "Local user password must be encrypted"
+    severity: high
+    cis:
+      - {benchmark: "Huawei VRP Hardening Guide", control: "AAA-7", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?im)local-user\s+\S+\s+password\s+(cipher|irreversible-cipher)'
+    remediation: "local-user <user> password irreversible-cipher <password>"
+
+  # ── SNMP ──────────────────────────────────────────────────────────────────
+
+  - id: VRP-SNMP-001
+    generic_id: SNMP-001
+    title: "SNMPv3 must be configured"
+    severity: high
+    cis:
+      - {benchmark: "Huawei VRP Hardening Guide", control: "SNMP-1", level: 1}
+    probe:
+      type: required_regex
+      # VRP syntax: snmp-agent group v3 <name>  (v3 comes BEFORE the group name)
+      pattern: '(?m)^snmp-agent (group\s+v3|usm-user\s+v3)'
+    remediation: "snmp-agent group v3 <name> privacy\nsnmp-agent usm-user v3 <user> <group> authentication-mode sha <key> privacy-mode aes128 <key>"
+
+  - id: VRP-SNMP-002
+    generic_id: SNMP-002
+    title: "SNMPv1/v2c community must not be configured"
+    severity: critical
+    cis:
+      - {benchmark: "Huawei VRP Hardening Guide", control: "SNMP-2", level: 1}
+    probe:
+      type: forbidden_regex
+      pattern: '(?m)^snmp-agent community (read|write)'
+    remediation: "undo snmp-agent community <name>. Use SNMPv3 only."
+
+  - id: VRP-SNMP-003
+    generic_id: SNMP-003
+    title: "SNMP must be restricted to management sources"
+    severity: high
+    cis:
+      - {benchmark: "Huawei VRP Hardening Guide", control: "SNMP-3", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^snmp-agent target-host trap address udp-domain'
+    remediation: "Configure snmp-agent acl and trap targets to restrict access to management hosts."
+
+  - id: VRP-SNMP-004
+    generic_id: SNMP-004
+    title: "SNMP sys-info contact and location must be configured"
+    severity: low
+    cis:
+      - {benchmark: "Huawei VRP Hardening Guide", control: "SNMP-4", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^snmp-agent sys-info (contact|location)\s+\S+'
+    remediation: "snmp-agent sys-info contact <NOC-email>\nsnmp-agent sys-info location <site>"
+
+  # ── NTP ───────────────────────────────────────────────────────────────────
+
+  - id: VRP-TIME-001
+    generic_id: TIME-001
+    title: "NTP service must be configured"
+    severity: high
+    cis:
+      - {benchmark: "Huawei VRP Hardening Guide", control: "TIME-1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^ntp-service (unicast-server|server-disable)'
+    remediation: "ntp-service unicast-server <ip>"
+
+  - id: VRP-TIME-002
+    generic_id: TIME-002
+    title: "NTP authentication must be configured"
+    severity: high
+    cis:
+      - {benchmark: "Huawei VRP Hardening Guide", control: "TIME-2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^ntp-service authentication enable'
+    remediation: "ntp-service authentication enable\nntp-service authentication-keyid 1 authentication-mode md5 <key>\nntp-service reliable authentication-keyid 1"
+
+  - id: VRP-TIME-003
+    generic_id: TIME-003
+    title: "NTP access restriction must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "Huawei VRP Hardening Guide", control: "TIME-3", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^ntp-service access (peer|server|query|limited)\s+\S+'
+    remediation: "ntp-service access server <acl> (restrict NTP access to known sources)"
+
+  # ── Logging ───────────────────────────────────────────────────────────────
+
+  - id: VRP-LOG-001
+    generic_id: LOG-001
+    title: "Syslog server must be configured"
+    severity: high
+    cis:
+      - {benchmark: "Huawei VRP Hardening Guide", control: "LOG-1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^info-center loghost \d+\.\d+\.\d+\.\d+'
+    remediation: "info-center loghost <syslog-server-ip>"
+
+  - id: VRP-LOG-002
+    generic_id: LOG-002
+    title: "Info-center enable must be configured"
+    severity: high
+    cis:
+      - {benchmark: "Huawei VRP Hardening Guide", control: "LOG-2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^info-center enable'
+    remediation: "info-center enable"
+
+  - id: VRP-LOG-003
+    generic_id: LOG-003
+    title: "Info-center logging source interface must be configured"
+    severity: low
+    cis:
+      - {benchmark: "Huawei VRP Hardening Guide", control: "LOG-3", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^info-center loghost source'
+    remediation: "info-center loghost source LoopBack0"
+
+  - id: VRP-LOG-004
+    generic_id: LOG-004
+    title: "Configuration change logging must be enabled"
+    severity: high
+    cis:
+      - {benchmark: "Huawei VRP Hardening Guide", control: "LOG-4", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^(info-center|aaa).*\S'
+      # VRP logs config changes to the security log when info-center is active
+    remediation: "Enable info-center and verify security channel logs are forwarded to syslog."
+
+  # ── Services ──────────────────────────────────────────────────────────────
+
+  - id: VRP-SVC-001
+    generic_id: SVC-001
+    title: "LLDP must be disabled if not required"
+    severity: medium
+    cis:
+      - {benchmark: "Huawei VRP Hardening Guide", control: "SVC-1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^undo lldp enable'
+    remediation: "undo lldp enable"
+
+  - id: VRP-SVC-002
+    generic_id: SVC-002
+    title: "FTP server must be disabled"
+    severity: high
+    cis:
+      - {benchmark: "Huawei VRP Hardening Guide", control: "SVC-2", level: 1}
+    probe:
+      type: forbidden_regex
+      pattern: '(?m)^ftp server enable'
+    remediation: "undo ftp server enable"
+
+  - id: VRP-SVC-003
+    generic_id: SVC-003
+    title: "Rlogin must be disabled"
+    severity: high
+    cis:
+      - {benchmark: "Huawei VRP Hardening Guide", control: "SVC-3", level: 1}
+    probe:
+      type: forbidden_regex
+      pattern: '(?m)^rlogin'
+    remediation: "undo rlogin (not enabled by default)"
+
+  - id: VRP-SVC-004
+    generic_id: SVC-004
+    title: "ICMP rate limiting must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "Huawei VRP Hardening Guide", control: "SVC-4", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^(ip icmp rate-limit|icmp error rate-limit)'
+    remediation: "ip icmp rate-limit 500"
+
+  - id: VRP-SVC-005
+    generic_id: SVC-005
+    title: "Routing protocol authentication must be configured"
+    severity: high
+    cis:
+      - {benchmark: "Huawei VRP Hardening Guide", control: "SVC-5", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: "Requires per-protocol and per-interface validation; topology-dependent."
+    remediation: "Configure OSPF, IS-IS, and BGP authentication on all configured routing protocols."
+
+  # ── Password policy ───────────────────────────────────────────────────────
+
+  - id: VRP-AUTH-001
+    generic_id: AUTH-001
+    title: "Super password must be configured"
+    severity: critical
+    cis:
+      - {benchmark: "Huawei VRP Hardening Guide", control: "AUTH-1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^super password (level 3 cipher|cipher)'
+    remediation: "super password level 3 cipher <password>"
+
+  - id: VRP-AUTH-002
+    generic_id: AUTH-002
+    title: "Console authentication must be configured"
+    severity: high
+    cis:
+      - {benchmark: "Huawei VRP Hardening Guide", control: "AUTH-2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?ms)user-interface console 0.+?authentication-mode (aaa|password)'
+    remediation: "Under user-interface console 0: authentication-mode aaa"
+
+  - id: VRP-AUTH-003
+    generic_id: AUTH-003
+    title: "Sysname must be configured"
+    severity: low
+    cis:
+      - {benchmark: "Huawei VRP Hardening Guide", control: "AUTH-3", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^sysname \S+'
+    remediation: "sysname <device-name>"
+
+  - id: VRP-MGMT-009
+    generic_id: MGMT-009
+    title: "Web network management must be disabled"
+    severity: high
+    cis:
+      - {benchmark: "Huawei VRP Hardening Guide", control: "MGMT-9", level: 1}
+    probe:
+      type: forbidden_regex
+      pattern: '(?m)^web-manager enable'
+    remediation: "undo web-manager enable"
+
+  - id: VRP-MGMT-010
+    generic_id: MGMT-010
+    title: "Trap source must be configured for SNMP"
+    severity: low
+    cis:
+      - {benchmark: "Huawei VRP Hardening Guide", control: "MGMT-10", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^snmp-agent trap source'
+    remediation: "snmp-agent trap source LoopBack0"
+
+  - id: VRP-MGMT-011
+    generic_id: MGMT-011
+    title: "SNMP agent must be explicitly enabled"
+    severity: medium
+    cis:
+      - {benchmark: "Huawei VRP Hardening Guide", control: "MGMT-11", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^snmp-agent\s*$'
+    remediation: "snmp-agent (enable SNMP only if required and configure with v3)"

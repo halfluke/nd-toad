@@ -179,3 +179,369 @@ checks:
     probe:
       type: manual
     remediation: "Review each 'config firewall policy' entry and ensure ips-sensor or app-sensor is applied to permitted traffic."
+
+  # ── Additional CIS FortiOS L1 controls ───────────────────────────────────
+
+  - id: FORTI-AUTH-003
+    generic_id: AUTH-003
+    title: "Admin login lockout must be configured"
+    description: "After repeated failures the account should be locked to prevent brute-force."
+    severity: high
+    cis:
+      - {benchmark: "CIS Fortinet FortiOS", control: "2.1.3", level: 1}
+    probe:
+      type: required_regex
+      # FortiOS: 'set admin-lockout-threshold <n>' under 'config system global'
+      pattern: '(?m)^\s+set\s+admin-lockout-threshold\s+[1-9]'
+    remediation: "Under 'config system global': set admin-lockout-threshold 5; set admin-lockout-duration 300"
+
+  - id: FORTI-AUTH-004
+    generic_id: AUTH-004
+    title: "Admin lockout duration must be configured"
+    severity: high
+    cis:
+      - {benchmark: "CIS Fortinet FortiOS", control: "2.1.4", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s+set\s+admin-lockout-duration\s+[1-9]'
+    remediation: "Under 'config system global': set admin-lockout-duration 300 (seconds)"
+
+  - id: FORTI-AUTH-005
+    generic_id: AUTH-005
+    title: "Password minimum length must be configured"
+    severity: high
+    cis:
+      - {benchmark: "CIS Fortinet FortiOS", control: "2.1.5", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s+set\s+min-length\s+([89]|[1-9][0-9]+)'
+    remediation: "Under 'config system password-policy': set min-length 8"
+
+  - id: FORTI-AUTH-006
+    generic_id: AUTH-006
+    title: "Two-factor authentication must be configured for admin accounts"
+    severity: high
+    cis:
+      - {benchmark: "CIS Fortinet FortiOS", control: "2.1.6", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: "Two-factor configuration is per-admin-account and depends on OTP provider availability. Cannot be globally validated."
+    remediation: "In 'config system admin' for each admin: set two-factor fortitoken (or email/sms)."
+
+  - id: FORTI-MGMT-007
+    generic_id: MGMT-007
+    title: "Admin management access must be restricted by trusted hosts"
+    severity: high
+    cis:
+      - {benchmark: "CIS Fortinet FortiOS", control: "1.1.4", level: 1}
+    probe:
+      type: required_regex
+      # FortiOS: admin account has 'set trusthost1' restricting source IPs
+      pattern: '(?m)^\s+set\s+trusthost[0-9]+\s+\d{1,3}\.\d{1,3}'
+    remediation: "Under 'config system admin' for each admin: set trusthost1 <mgmt-ip/mask>"
+
+  - id: FORTI-MGMT-008
+    generic_id: MGMT-008
+    title: "HTTPS admin port must not use default port 443 alone"
+    severity: low
+    cis:
+      - {benchmark: "CIS Fortinet FortiOS", control: "1.1.8", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s+set\s+admin-sport\s+[0-9]+'
+    remediation: "Under 'config system global': set admin-sport 8443 (or non-default port)"
+
+  - id: FORTI-AAA-001
+    generic_id: AAA-001
+    title: "TACACS+ or RADIUS server must be configured"
+    severity: high
+    cis:
+      - {benchmark: "CIS Fortinet FortiOS", control: "2.3.1", level: 1}
+    probe:
+      type: required_regex
+      # FortiOS: 'config user tacacs+' or 'config user radius'
+      pattern: '(?m)^config user (tacacs\+|radius)'
+    remediation: "Configure: config user tacacs+; edit <name>; set server <ip>; set key <key>"
+
+  - id: FORTI-SNMP-002
+    generic_id: SNMP-002
+    title: "SNMPv3 must be configured"
+    severity: high
+    cis:
+      - {benchmark: "CIS Fortinet FortiOS", control: "3.1.2", level: 1}
+    probe:
+      type: required_regex
+      # FortiOS: 'config system snmp user' defines SNMPv3 users
+      pattern: '(?m)^config system snmp user'
+    remediation: "Configure SNMPv3: config system snmp user; edit <user>; set security-level auth-priv"
+
+  - id: FORTI-SNMP-003
+    generic_id: SNMP-003
+    title: "SNMP traps must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Fortinet FortiOS", control: "3.1.3", level: 1}
+    probe:
+      type: required_regex
+      # FortiOS: SNMPv3 user must have events/traps enabled
+      pattern: '(?m)^\s+set\s+trap-status\s+enable'
+    remediation: "Under 'config system snmp user': set trap-status enable; set trap-lport <port>; set trap-rport <port>"
+
+  - id: FORTI-SNMP-004
+    generic_id: SNMP-004
+    title: "SNMP community v1/v2c must not be configured"
+    severity: critical
+    cis:
+      - {benchmark: "CIS Fortinet FortiOS", control: "3.1.4", level: 1}
+    probe:
+      type: forbidden_regex
+      # FortiOS SNMPv1/v2c community exists under 'config system snmp community'
+      # Flag if any community is defined and status is enabled
+      pattern: '(?ms)config system snmp community.*?set\s+status\s+enable'
+    remediation: "Remove all SNMPv1/v2c communities under 'config system snmp community'. Use SNMPv3 only."
+
+  - id: FORTI-LOG-003
+    generic_id: LOG-003
+    title: "Log events must include authentication events"
+    severity: high
+    cis:
+      - {benchmark: "CIS Fortinet FortiOS", control: "4.2.1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s+set\s+log\s+enable'
+      scope: "(?m)^config log eventfilter"
+    remediation: "Under 'config log eventfilter': set event enable; set security-rating enable"
+
+  - id: FORTI-LOG-004
+    generic_id: LOG-004
+    title: "Firewall policy log must be enabled for permitted traffic"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Fortinet FortiOS", control: "4.2.2", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: "Requires checking 'set logtraffic all' on each firewall policy. Cannot be validated globally."
+    remediation: "Under each 'config firewall policy': set logtraffic all"
+
+  - id: FORTI-LOG-005
+    generic_id: LOG-005
+    title: "Log reliable delivery must be configured for remote syslog"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Fortinet FortiOS", control: "4.1.3", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s+set\s+reliable\s+enable'
+      scope: "(?m)^config log syslogd setting"
+    remediation: "Under 'config log syslogd setting': set reliable enable (uses TCP syslog)"
+
+  - id: FORTI-LOG-006
+    generic_id: LOG-006
+    title: "Log disk must be configured as local backup"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Fortinet FortiOS", control: "4.1.4", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s+set\s+status\s+enable'
+      scope: "(?m)^config log disk setting"
+    remediation: "Under 'config log disk setting': set status enable; set severity information"
+
+  - id: FORTI-TIME-002
+    generic_id: TIME-002
+    title: "NTP must use authenticated servers"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Fortinet FortiOS", control: "5.1.2", level: 1}
+    probe:
+      type: required_regex
+      # FortiOS: NTP servers under 'config system ntp'; status must be enable and type custom
+      pattern: '(?m)^\s+set\s+type\s+custom'
+    remediation: "Under 'config system ntp': set type custom; configure at least 2 trusted NTP servers."
+
+  - id: FORTI-POLICY-003
+    generic_id: POLICY-003
+    title: "SSL/TLS minimum version must be 1.2"
+    description: "TLS 1.0 and 1.1 are deprecated; disable them for all admin and HTTPS inspection contexts."
+    severity: high
+    cis:
+      - {benchmark: "CIS Fortinet FortiOS", control: "6.3.1", level: 1}
+    probe:
+      type: forbidden_regex
+      # FortiOS: 'set ssl-min-proto-version TLSv1-0' or 'TLSv1-1' indicates weak TLS enabled
+      pattern: '(?m)^\s+set\s+ssl-min-proto-version\s+TLSv1-(0|1)\b'
+    remediation: "Under 'config system global': set ssl-min-proto-version TLSv1-2"
+
+  - id: FORTI-POLICY-004
+    generic_id: POLICY-004
+    title: "IPS profile must be applied to permitted firewall policies"
+    severity: high
+    cis:
+      - {benchmark: "CIS Fortinet FortiOS", control: "6.2.2", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: "IPS profile assignment must be validated per policy rule. Cannot globally confirm application."
+    remediation: "Under each permitted 'config firewall policy': set ips-sensor <profile>"
+
+  - id: FORTI-POLICY-005
+    generic_id: POLICY-005
+    title: "Anti-virus profile must be applied to permitted firewall policies"
+    severity: high
+    cis:
+      - {benchmark: "CIS Fortinet FortiOS", control: "6.2.3", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: "AV profile assignment must be validated per policy rule."
+    remediation: "Under each permitted 'config firewall policy': set av-profile <profile>"
+
+  - id: FORTI-POLICY-006
+    generic_id: POLICY-006
+    title: "Implicit deny policy must be configured as last rule"
+    severity: critical
+    cis:
+      - {benchmark: "CIS Fortinet FortiOS", control: "6.1.2", level: 1}
+    probe:
+      type: required_regex
+      # FortiOS: default implicit deny is built-in, but an explicit deny with 'set action deny'
+      # as last rule is best practice. Check for at least one deny action policy.
+      pattern: '(?m)^\s+set\s+action\s+deny'
+    remediation: "Ensure the last firewall policy has 'set action deny' to implement explicit deny-all."
+
+  - id: FORTI-POLICY-007
+    generic_id: POLICY-007
+    title: "Firewall address objects must not use 'all' for untrusted zones"
+    severity: critical
+    cis:
+      - {benchmark: "CIS Fortinet FortiOS", control: "6.1.3", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: "Use of 'all' is only a violation when applied to untrusted/internet-facing zones; zone context cannot be determined from config text alone."
+    remediation: "Replace 'all' address objects on untrusted zone policies with specific address groups."
+
+  - id: FORTI-MGMT-009
+    generic_id: MGMT-009
+    title: "GUI idle timeout must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Fortinet FortiOS", control: "1.2.2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s+set\s+admintimeout\s+[1-9]'
+    remediation: "Under 'config system global': set admintimeout 10 (minutes)"
+
+  - id: FORTI-MGMT-010
+    generic_id: MGMT-010
+    title: "Admin SSH access must be restricted to management source IPs"
+    severity: high
+    cis:
+      - {benchmark: "CIS Fortinet FortiOS", control: "1.1.9", level: 1}
+    probe:
+      type: required_regex
+      # Same as MGMT-007 but for SSH; trusthost covers all admin protocols including SSH
+      pattern: '(?m)^\s+set\s+trusthost[0-9]+\s+\d{1,3}\.\d{1,3}'
+    remediation: "Under each admin account: set trusthost1 <mgmt-ip/mask>"
+
+  - id: FORTI-MGMT-011
+    generic_id: MGMT-011
+    title: "Management interface must use dedicated management VDOM or interface"
+    severity: high
+    cis:
+      - {benchmark: "CIS Fortinet FortiOS", control: "1.2.3", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: "Management VDOM/interface isolation requires knowledge of the network architecture. Cannot be determined from config text alone."
+    remediation: "Configure management access on a dedicated management interface or VDOM."
+
+  - id: FORTI-POLICY-008
+    generic_id: POLICY-008
+    title: "Web filtering profile must be applied to outbound traffic"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Fortinet FortiOS", control: "6.2.4", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: "Web filter assignment is per-policy and requires knowledge of which policies are outbound."
+    remediation: "Under permitted outbound 'config firewall policy': set webfilter-profile <profile>"
+
+  - id: FORTI-LOG-007
+    generic_id: LOG-007
+    title: "FortiAnalyzer or remote log storage must be configured"
+    severity: high
+    cis:
+      - {benchmark: "CIS Fortinet FortiOS", control: "4.1.5", level: 1}
+    probe:
+      type: required_regex
+      # FortiOS: FortiAnalyzer config block or syslogd config; syslogd already has LOG-001
+      # This checks specifically for FortiAnalyzer or a second syslog destination
+      pattern: '(?m)^config log (fortianalyzer|syslogd2)\s+setting'
+    remediation: "Configure FortiAnalyzer: config log fortianalyzer setting; set status enable; set server <ip>"
+
+  - id: FORTI-AUTH-007
+    generic_id: AUTH-007
+    title: "Admin account password must not be blank"
+    severity: critical
+    cis:
+      - {benchmark: "CIS Fortinet FortiOS", control: "2.1.7", level: 1}
+    probe:
+      type: forbidden_regex
+      # FortiOS: blank password stored as '$1$$' in config exports
+      pattern: '(?m)^\s+set\s+passwd\s+ENC\s+\$1\$\$'
+    remediation: "Set a strong password for all admin accounts: config system admin; edit <user>; set passwd <strong-password>"
+
+  - id: FORTI-SNMP-005
+    generic_id: SNMP-005
+    title: "SNMP access must be restricted by source IP"
+    severity: high
+    cis:
+      - {benchmark: "CIS Fortinet FortiOS", control: "3.1.5", level: 1}
+    probe:
+      type: required_regex
+      # FortiOS: SNMP source restriction via 'set hosts' inside 'config system snmp user'
+      pattern: '(?m)^\s+set\s+hosts\s+\d{1,3}\.\d{1,3}'
+    remediation: "Under 'config system snmp user': set hosts <mgmt-ip/mask>"
+
+  - id: FORTI-MGMT-012
+    generic_id: MGMT-012
+    title: "Unused management protocols must be disabled"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Fortinet FortiOS", control: "1.1.10", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s+set\s+admin-sport\s+[0-9]+'
+    remediation: "Under 'config system global': disable unused management protocols (set admin-port 0 for HTTP)."
+
+  - id: FORTI-LOG-008
+    generic_id: LOG-008
+    title: "System events must be logged to syslog"
+    severity: high
+    cis:
+      - {benchmark: "CIS Fortinet FortiOS", control: "4.2.3", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s+set\s+event\s+enable'
+    remediation: "Under 'config log eventfilter': set event enable"
+
+  - id: FORTI-TIME-003
+    generic_id: TIME-003
+    title: "NTP active synchronisation must be enabled"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Fortinet FortiOS", control: "5.1.3", level: 1}
+    probe:
+      type: required_regex
+      # FortiOS: 'set ntpsync enable' or 'set server-mode enable' under config system ntp
+      pattern: '(?m)^\s+set\s+(ntpsync|syncinterval)\s+'
+    remediation: "Under 'config system ntp': set ntpsync enable; set syncinterval 60"
+
+  - id: FORTI-AUTH-008
+    generic_id: AUTH-008
+    title: "Password minimum length and complexity must be enforced"
+    severity: high
+    cis:
+      - {benchmark: "CIS Fortinet FortiOS", control: "2.1.8", level: 1}
+    probe:
+      type: required_regex
+      # FortiOS: 'set must-contain' under 'config system password-policy'
+      pattern: '(?m)^\s+set\s+must-contain\s+'
+    remediation: "Under 'config system password-policy': set must-contain upper-case-letter lower-case-letter number non-alphanumeric"

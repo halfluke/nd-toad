@@ -15,6 +15,8 @@ of exercising parsers and checks in fluff. They are released under **CC0 / Publi
 |------|----------|
 | `checkpoint/gaia_r81_show_configuration.conf` | Gaia R81 CLISH reference: Check Point sk83220, sk132492 |
 | `cisco_ftd/ftd72_lina_running_config.conf` | Cisco FTD 7.2 LINA CLI Reference; community.cisco.com export examples |
+| `cisco_xe/synthetic_cat9k_isr4k.conf` | CIS Cisco IOS 17 Benchmark + Catalyst 9300/ISR4K CLI reference; representative hardened config with Cat9K `platform type` and `AppGigabitEthernet` fingerprints |
+| `huawei_vrp/synthetic_ne_router.conf` | Huawei VRP Security Hardening Guide + NE series CLI reference; representative hardened NE router config |
 | `hpe_aruba/aos_s_procurve_running_config.conf` | HPE ProCurve J9727A WB.16.10 CLI reference |
 | `hpe_aruba/aos_cx_running_config.conf` | AOS-CX 10.14 Hardening Guide (arubanetworking.hpe.com/techdocs/) |
 | `sonicwall/sonicos7_ecli_export.conf` | SonicOS 7.x E-CLI reference; community.sonicwall.com |
@@ -192,6 +194,84 @@ by the poster; they are included here for testing purposes only.
 | `junos/pastebin_junos_srx_curly.conf` |
 | `junos/pastebin_p04_full.conf` |
 | `junos/pastebin_srx300_curly.conf` |
+
+---
+
+## Apache 2.0 — Batfish project (IOS-XE and IOS-XR unit test configs)
+
+Source: https://github.com/batfish/batfish  
+Licence: [Apache License 2.0](https://github.com/batfish/batfish/blob/master/LICENSE)  
+Copyright © Batfish contributors.  
+These are minimal grammar unit-test fixtures. They are placed in `cisco_xe/` and `cisco_xr/` for
+profile-specific testing; use `--vendor cisco_xe` / `--vendor cisco_xr` when auditing them because
+their generic IOS syntax auto-detects as `cisco_ios`.
+
+| File |
+|------|
+| `cisco_xe/batfish_aaaAuthenticationIos.conf` |
+| `cisco_xe/batfish_aaaNewmodel.conf` |
+| `cisco_xe/batfish_aclIos.conf` |
+| `cisco_xe/batfish_ios_aaa_group_server.conf` |
+| `cisco_xe/batfish_ios_bgp_multiple_routers.conf` |
+| `cisco_xe/batfish_ios_xe_crypto_parsing.conf` |
+| `cisco_xe/batfish_ios_xe_eigrp_to_bgp.conf` |
+| `cisco_xe/batfish_ios_xe_zone_default_behavior.conf` |
+| `cisco_xe/batfish_iosxe_vasi_interface.conf` |
+| `cisco_xr/batfish_bgp-aggregate.conf` |
+| `cisco_xr/batfish_xr-bfd.conf` |
+| `cisco_xr/batfish_xr-bgp.conf` |
+| `cisco_xr/batfish_xr-dscp.conf` |
+
+---
+
+## Apache 2.0 — networktocode/ntc-rosetta
+
+Source: https://github.com/networktocode/ntc-rosetta  
+Licence: [Apache License 2.0](https://github.com/networktocode/ntc-rosetta/blob/develop/LICENSE)
+
+| File |
+|------|
+| `cisco_xe/ntc_rosetta_ios_config.conf` |
+
+---
+
+## MIT — ters-golemi/IOS-XR-Segment-Routing
+
+Source: https://github.com/ters-golemi/IOS-XR-Segment-Routing  
+Licence: MIT  
+Realistic IOS-XR SP configuration templates for core, edge, and aggregation routers.
+
+| File |
+|------|
+| `cisco_xr/ters_golemi_CORE-1-complete-config.conf` |
+| `cisco_xr/ters_golemi_aggregation-router-template.conf` |
+| `cisco_xr/ters_golemi_core-router-template.conf` |
+| `cisco_xr/ters_golemi_edge-router-template.conf` |
+
+---
+
+## MIT — napalm-automation-community/napalm-f5
+
+Source: https://github.com/napalm-automation-community/napalm-f5  
+Licence: [MIT](https://github.com/napalm-automation-community/napalm-f5/blob/master/LICENSE)  
+These are BIG-IP TMSH unit-test fixtures from the NAPALM F5 driver project.
+
+| File |
+|------|
+| `f5_bigip/napalm_f5_initial.conf` |
+| `f5_bigip/napalm_f5_merge_good.conf` |
+| `f5_bigip/napalm_f5_new_good.conf` |
+
+---
+
+## Public gist (no explicit licence)
+
+This file was posted publicly on GitHub Gist by its author for reference purposes.
+Included here for testing only.
+
+| File | Source |
+|------|--------|
+| `huawei_vrp/glw119_s5735s_switch.conf` | https://gist.github.com/glw119/888e318fd1f49ec4063fc016e67c7079 — Huawei S5735S-L8T4S home network switch |
 
 ---
 

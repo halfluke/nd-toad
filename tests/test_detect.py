@@ -29,6 +29,10 @@ DETECTION_CASES = [
     ("nokia_sros", "good.conf"),
     ("nokia_srl",  "good.conf"),
     ("cisco_ftd",  "good.conf"),
+    ("cisco_xe",   "good.conf"),
+    ("cisco_xr",   "good.conf"),
+    ("huawei_vrp", "good.conf"),
+    ("f5_bigip",   "good.conf"),
 ]
 
 

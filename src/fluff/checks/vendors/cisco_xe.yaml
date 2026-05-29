@@ -1,0 +1,611 @@
+# Cisco IOS-XE compliance checks
+# Source: CIS Cisco IOS 17 Benchmark L1 (same ruleset applies to IOS-XE)
+# Additional: CIS Cisco IOS 17 L1 is the authoritative published benchmark for
+# Cat 9K / ISR 4K / ASR 1K running IOS-XE.
+
+vendor: cisco
+profile: cisco_xe
+checks:
+
+  # ── Management access ─────────────────────────────────────────────────────
+
+  - id: XE-MGMT-001
+    generic_id: MGMT-001
+    title: "SSH must be enabled and Telnet disabled on VTY lines"
+    severity: critical
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "1.1.1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)transport input ssh'
+    remediation: |
+      line vty 0 15
+       transport input ssh
+
+  - id: XE-MGMT-002
+    generic_id: MGMT-002
+    title: "SSH version 2 must be enabled"
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "1.1.2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^ip ssh version 2'
+    remediation: "ip ssh version 2"
+
+  - id: XE-MGMT-003
+    generic_id: MGMT-003
+    title: "SSH authentication retries must be 3 or fewer"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "1.1.3", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^ip ssh authentication-retries [1-3]$'
+    remediation: "ip ssh authentication-retries 3"
+
+  - id: XE-MGMT-004
+    generic_id: MGMT-004
+    title: "SSH timeout must be 60 seconds or fewer"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "1.1.4", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^ip ssh time-out (([1-5][0-9]|60)|[1-9])$'
+    remediation: "ip ssh time-out 60"
+
+  - id: XE-MGMT-005
+    generic_id: MGMT-005
+    title: "HTTP server must be disabled"
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "1.1.5", level: 1}
+    probe:
+      type: forbidden_regex
+      pattern: '(?m)^ip http server$'
+    remediation: "no ip http server"
+
+  - id: XE-MGMT-006
+    generic_id: MGMT-006
+    title: "HTTPS server must use TLS 1.2 or higher"
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "1.1.6", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^ip http secure-server'
+    remediation: "ip http secure-server\nip http tls-version TLSv1.2"
+
+  - id: XE-MGMT-007
+    generic_id: MGMT-007
+    title: "VTY exec-timeout must be 10 minutes or less"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "1.2.1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?ms)line vty.+?exec-timeout ([0-9]|10) (0|[0-5][0-9])'
+    remediation: "line vty 0 15\n exec-timeout 10 0"
+
+  - id: XE-MGMT-008
+    generic_id: MGMT-008
+    title: "Console exec-timeout must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "1.2.2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?ms)line con 0.+?exec-timeout'
+    remediation: "line con 0\n exec-timeout 5 0"
+
+  - id: XE-MGMT-009
+    generic_id: MGMT-009
+    title: "Access class must be configured on VTY lines"
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "1.2.3", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?ms)line vty.+?access-class'
+    remediation: "line vty 0 15\n access-class <acl-name> in vrf-also"
+
+  - id: XE-MGMT-010
+    generic_id: MGMT-010
+    title: "Logging must be enabled"
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "1.3.1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^logging host \d+\.\d+\.\d+\.\d+'
+    remediation: "logging host <syslog-server-ip>"
+
+  - id: XE-MGMT-011
+    generic_id: MGMT-011
+    title: "Logging severity must be informational or higher"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "1.3.2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^logging trap (informational|debugging|notifications|6|7|5)'
+    remediation: "logging trap informational"
+
+  - id: XE-MGMT-012
+    generic_id: MGMT-012
+    title: "Logging source-interface must be configured"
+    severity: low
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "1.3.3", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^logging source-interface'
+    remediation: "logging source-interface Loopback0"
+
+  - id: XE-MGMT-013
+    generic_id: MGMT-013
+    title: "Service timestamps must be configured on log messages"
+    severity: low
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "1.3.4", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^service timestamps log datetime'
+    remediation: "service timestamps log datetime msec localtime show-timezone"
+
+  # ── AAA ───────────────────────────────────────────────────────────────────
+
+  - id: XE-AAA-001
+    generic_id: AAA-001
+    title: "AAA must be enabled"
+    severity: critical
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "2.1.1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^aaa new-model'
+    remediation: "aaa new-model"
+
+  - id: XE-AAA-002
+    generic_id: AAA-002
+    title: "AAA authentication must be configured for login"
+    severity: critical
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "2.1.2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^aaa authentication login'
+    remediation: "aaa authentication login default group tacacs+ local"
+
+  - id: XE-AAA-003
+    generic_id: AAA-003
+    title: "AAA authentication must be configured for enable"
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "2.1.3", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^aaa authentication enable'
+    remediation: "aaa authentication enable default group tacacs+ enable"
+
+  - id: XE-AAA-004
+    generic_id: AAA-004
+    title: "AAA accounting for commands must be configured"
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "2.2.1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^aaa accounting (commands|exec)'
+    remediation: "aaa accounting exec default start-stop group tacacs+\naaa accounting commands 15 default start-stop group tacacs+"
+
+  - id: XE-AAA-005
+    generic_id: AAA-005
+    title: "TACACS+ server must be configured"
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "2.2.2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^(tacacs server|tacacs-server host)'
+    remediation: "tacacs server <name>\n address ipv4 <ip>\n key <secret>"
+
+  # ── Banners ───────────────────────────────────────────────────────────────
+
+  - id: XE-MGMT-014
+    generic_id: MGMT-014
+    title: "Login banner must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "1.4.1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^banner (login|motd)'
+    remediation: "banner login ^Authorized access only^"
+
+  # ── Password hardening ────────────────────────────────────────────────────
+
+  - id: XE-AUTH-001
+    generic_id: AUTH-001
+    title: "Service password-encryption must be enabled"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "3.1.1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^service password-encryption'
+    remediation: "service password-encryption"
+
+  - id: XE-AUTH-002
+    generic_id: AUTH-002
+    title: "Enable secret must be configured"
+    severity: critical
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "3.1.2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^enable secret'
+    remediation: "enable secret <strong-password>"
+
+  - id: XE-AUTH-003
+    generic_id: AUTH-003
+    title: "Username secret must be configured for local accounts"
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "3.1.3", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^username \S+ (secret|privilege \d+ secret)'
+    remediation: "username admin privilege 15 secret <strong-password>"
+
+  - id: XE-AUTH-004
+    generic_id: AUTH-004
+    title: "Password minimum length must be enforced"
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "3.2.1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^security passwords min-length ([89]|[1-9][0-9]+)'
+    remediation: "security passwords min-length 14"
+
+  - id: XE-AUTH-005
+    generic_id: AUTH-005
+    title: "Login block-for must be configured"
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "3.2.2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^login block-for'
+    remediation: "login block-for 120 attempts 3 within 60"
+
+  # ── SNMP ──────────────────────────────────────────────────────────────────
+
+  - id: XE-SNMP-001
+    generic_id: SNMP-001
+    title: "SNMPv1/v2c must be disabled"
+    severity: critical
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "4.1.1", level: 1}
+    probe:
+      type: forbidden_regex
+      pattern: '(?m)^snmp-server community \S+ (RO|RW)(?!\s+\d)'
+    remediation: "Remove: no snmp-server community <name>\nUse SNMPv3: snmp-server group <name> v3 priv"
+
+  - id: XE-SNMP-002
+    generic_id: SNMP-002
+    title: "SNMPv3 must be configured with AuthPriv"
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "4.1.2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^snmp-server group \S+ v3 priv'
+    remediation: "snmp-server group <name> v3 priv\nsnmp-server user <user> <group> v3 auth sha <key> priv aes 128 <key>"
+
+  - id: XE-SNMP-003
+    generic_id: SNMP-003
+    title: "SNMP must be restricted to specific hosts (access ACL)"
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "4.1.3", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^snmp-server (group|user|community) .+ (access|acl-v6|acl) '
+    remediation: "Apply access list to snmp-server group: snmp-server group <g> v3 priv access <acl>"
+
+  - id: XE-SNMP-004
+    generic_id: SNMP-004
+    title: "SNMP trap source must be configured"
+    severity: low
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "4.1.4", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^snmp-server trap-source'
+    remediation: "snmp-server trap-source Loopback0"
+
+  - id: XE-SNMP-005
+    generic_id: SNMP-005
+    title: "SNMP community strings must not use default values"
+    severity: critical
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "4.1.5", level: 1}
+    probe:
+      type: forbidden_regex
+      pattern: '(?im)^snmp-server community (public|private|cisco)\s'
+    remediation: "Remove default community strings: no snmp-server community public\nno snmp-server community private"
+
+  # ── NTP ───────────────────────────────────────────────────────────────────
+
+  - id: XE-TIME-001
+    generic_id: TIME-001
+    title: "NTP must be configured"
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "5.1.1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^ntp server'
+    remediation: "ntp server <ntp-server-ip>"
+
+  - id: XE-TIME-002
+    generic_id: TIME-002
+    title: "NTP authentication must be configured"
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "5.1.2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^ntp authenticate'
+    remediation: "ntp authenticate\nntp authentication-key 1 md5 <key>\nntp trusted-key 1"
+
+  - id: XE-TIME-003
+    generic_id: TIME-003
+    title: "NTP trusted-key must be configured"
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "5.1.3", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^ntp trusted-key'
+    remediation: "ntp trusted-key 1"
+
+  - id: XE-TIME-004
+    generic_id: TIME-004
+    title: "Clock timezone must be configured"
+    severity: low
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "5.2.1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^clock timezone'
+    remediation: "clock timezone UTC 0"
+
+  # ── Routing & IP services ─────────────────────────────────────────────────
+
+  - id: XE-SVC-001
+    generic_id: SVC-001
+    title: "IP source routing must be disabled"
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "6.1.1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^no ip source-route'
+    remediation: "no ip source-route"
+
+  - id: XE-SVC-002
+    generic_id: SVC-002
+    title: "IP proxy-arp must be disabled on all interfaces"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "6.1.2", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: "Must verify every interface has 'no ip proxy-arp'; partial match may produce false pass/fail."
+    remediation: "On each interface: no ip proxy-arp"
+
+  - id: XE-SVC-003
+    generic_id: SVC-003
+    title: "CDP must be disabled globally or restricted"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "6.2.1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^no cdp run'
+    remediation: "no cdp run (or selectively: no cdp enable per external interface)"
+
+  - id: XE-SVC-004
+    generic_id: SVC-004
+    title: "Directed broadcasts must be disabled"
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "6.1.3", level: 1}
+    probe:
+      type: forbidden_regex
+      pattern: '(?m)^\s+ip directed-broadcast'
+    remediation: "Globally disabled by default in modern IOS-XE. Ensure 'no ip directed-broadcast' is set on any interface that has it explicitly."
+
+  - id: XE-SVC-005
+    generic_id: SVC-005
+    title: "IP mask-reply must be disabled"
+    severity: low
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "6.1.4", level: 1}
+    probe:
+      type: forbidden_regex
+      pattern: '(?m)^\s+ip mask-reply'
+    remediation: "Under each interface: no ip mask-reply (default is off)"
+
+  - id: XE-SVC-006
+    generic_id: SVC-006
+    title: "IP unreachables must be disabled on external interfaces"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "6.1.5", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: "Requires per-interface review to distinguish external from internal interfaces."
+    remediation: "On each external interface: no ip unreachables"
+
+  - id: XE-SVC-007
+    generic_id: SVC-007
+    title: "IP redirects must be disabled"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "6.1.6", level: 1}
+    probe:
+      type: forbidden_regex
+      pattern: '(?m)^\s+ip redirects'
+    remediation: "Under each interface: no ip redirects"
+
+  # ── Logging enhancements ──────────────────────────────────────────────────
+
+  - id: XE-LOG-001
+    generic_id: LOG-001
+    title: "Logging on must be enabled"
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "1.3.5", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^logging on'
+    remediation: "logging on"
+
+  - id: XE-LOG-002
+    generic_id: LOG-002
+    title: "Logging buffered must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "1.3.6", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^logging buffered'
+    remediation: "logging buffered 16384"
+
+  - id: XE-LOG-003
+    generic_id: LOG-003
+    title: "Service timestamps debug datetime must be configured"
+    severity: low
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "1.3.7", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^service timestamps debug datetime'
+    remediation: "service timestamps debug datetime msec localtime show-timezone"
+
+  # ── Platform-specific IOS-XE hardening ────────────────────────────────────
+
+  - id: XE-MGMT-015
+    generic_id: MGMT-015
+    title: "IP domain lookup must be disabled or restricted"
+    severity: low
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "1.5.1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^(no ip domain.?lookup|ip domain.?name\s+\S+)'
+    remediation: "no ip domain-lookup (or configure ip domain-name to limit lookups)"
+
+  - id: XE-MGMT-016
+    generic_id: MGMT-016
+    title: "Hostname must be configured"
+    severity: low
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "1.5.2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^hostname \S+'
+    remediation: "hostname <device-name>"
+
+  - id: XE-MGMT-017
+    generic_id: MGMT-017
+    title: "TCP keepalives must be enabled"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "1.5.3", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^service tcp-keepalives-(in|out)'
+    remediation: "service tcp-keepalives-in\nservice tcp-keepalives-out"
+
+  - id: XE-SVC-008
+    generic_id: SVC-008
+    title: "BGP neighbor password must be configured"
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "7.1.1", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: "Requires verifying password is set for every BGP neighbor; topology-dependent."
+    remediation: "Under router bgp X: neighbor <ip> password <key>"
+
+  - id: XE-SVC-009
+    generic_id: SVC-009
+    title: "OSPF authentication must be configured"
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "7.2.1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)(ip ospf authentication|area \d+ authentication)'
+    remediation: "Configure OSPF message-digest authentication on each interface or area"
+
+  - id: XE-POLICY-001
+    generic_id: POLICY-001
+    title: "Control plane policing (CoPP) must be configured"
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "8.1.1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^(control-plane|policy-map CoPP|service-policy input)'
+    remediation: "Configure and apply a CoPP policy to the control-plane"
+
+  - id: XE-POLICY-002
+    generic_id: POLICY-002
+    title: "uRPF must be configured on external interfaces"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "8.1.2", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: "uRPF should be applied only to external interfaces; cannot determine external vs internal without topology."
+    remediation: "On each external interface: ip verify unicast source reachable-via rx"
+
+  - id: XE-POLICY-003
+    generic_id: POLICY-003
+    title: "IP CEF must be enabled"
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "8.2.1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^ip cef'
+    remediation: "ip cef"
+
+  - id: XE-MGMT-018
+    generic_id: MGMT-018
+    title: "No service pad must be configured"
+    severity: low
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "1.5.4", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^no service pad'
+    remediation: "no service pad"
+
+  - id: XE-MGMT-019
+    generic_id: MGMT-019
+    title: "Service finger must be disabled"
+    severity: low
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "1.5.5", level: 1}
+    probe:
+      type: forbidden_regex
+      pattern: '(?m)^service finger'
+    remediation: "no service finger (default is off)"

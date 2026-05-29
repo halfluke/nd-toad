@@ -134,3 +134,368 @@ checks:
       type: forbidden_regex
       pattern: '(?m)^\s*permit\s+(ip|tcp|udp|any)\s+any\s+any'
     remediation: "Replace any-any rules with least-privilege entries."
+
+  # ── Additional CIS HPE Aruba L1 controls ─────────────────────────────────
+
+  - id: ARUBA-MGMT-006
+    generic_id: MGMT-006
+    title: "VTY exec-timeout must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "CIS HPE Aruba", control: "1.2.2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*exec-timeout\s+[1-9]'
+      scope: "^line vty"
+    remediation: "Under 'line vty': exec-timeout 10"
+
+  - id: ARUBA-MGMT-007
+    generic_id: MGMT-007
+    title: "Console exec-timeout must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "CIS HPE Aruba", control: "1.2.3", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*exec-timeout\s+[1-9]'
+      scope: "^line console"
+    remediation: "Under 'line console': exec-timeout 10"
+
+  - id: ARUBA-MGMT-008
+    generic_id: MGMT-008
+    title: "SSH version 2 must be used"
+    severity: high
+    cis:
+      - {benchmark: "CIS HPE Aruba", control: "1.1.4", level: 1}
+    probe:
+      type: required_regex
+      # AOS-S/ProCurve: 'ip ssh version 2' or 'ssh version 2'
+      # AOS-CX: SSHv2 by default once feature enabled
+      pattern: '(?m)^\s*(ip\s+)?ssh\s+version\s+2'
+    remediation: "Configure: ip ssh version 2"
+
+  - id: ARUBA-MGMT-009
+    generic_id: MGMT-009
+    title: "HTTPS must be enabled for web management"
+    severity: medium
+    cis:
+      - {benchmark: "CIS HPE Aruba", control: "1.1.5", level: 1}
+    probe:
+      type: required_regex
+      # AOS-S: 'web-management ssl'; AOS-CX: 'https-server vrf mgmt'
+      pattern: '(?m)^\s*(web-management\s+ssl|https-server\s+vrf\s+(mgmt|default))'
+    remediation: "AOS-S: web-management ssl. AOS-CX: https-server vrf mgmt"
+
+  - id: ARUBA-MGMT-010
+    generic_id: MGMT-010
+    title: "IP source route must be disabled"
+    severity: high
+    cis:
+      - {benchmark: "CIS HPE Aruba", control: "1.1.6", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*no\s+ip\s+source-route'
+    remediation: "Configure: no ip source-route"
+
+  - id: ARUBA-AAA-002
+    generic_id: AAA-002
+    title: "AAA authorization must be configured"
+    severity: high
+    cis:
+      - {benchmark: "CIS HPE Aruba", control: "2.1.2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*aaa\s+authorization\s+(exec|commands)\s+'
+    remediation: "Configure AAA authorization for EXEC mode."
+
+  - id: ARUBA-AAA-003
+    generic_id: AAA-003
+    title: "TACACS+ server must be configured"
+    severity: high
+    cis:
+      - {benchmark: "CIS HPE Aruba", control: "2.1.3", level: 1}
+    probe:
+      type: required_regex
+      # AOS-S: 'tacacs-server host'; AOS-CX: 'tacacs server <name>'
+      pattern: '(?m)^\s*(tacacs-server\s+host|tacacs\s+server\s+\S)'
+    remediation: "Configure: tacacs-server host <ip> key <key>"
+
+  - id: ARUBA-AAA-004
+    generic_id: AAA-004
+    title: "AAA accounting must be configured"
+    severity: high
+    cis:
+      - {benchmark: "CIS HPE Aruba", control: "2.1.4", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*aaa\s+accounting\s+(exec|commands)\s+'
+    remediation: "Configure: aaa accounting exec default start-stop group tacacs+"
+
+  - id: ARUBA-AUTH-002
+    generic_id: AUTH-002
+    title: "Password minimum length must be enforced"
+    severity: medium
+    cis:
+      - {benchmark: "CIS HPE Aruba", control: "2.2.2", level: 1}
+    probe:
+      type: required_regex
+      # AOS-S: 'password minimum-length 8'; AOS-CX: 'password configuration'
+      pattern: '(?m)^\s*password\s+minimum-length\s+([89]|[1-9][0-9]+)'
+    remediation: "Configure: password minimum-length 8"
+
+  - id: ARUBA-AUTH-003
+    generic_id: AUTH-003
+    title: "Password complexity must be enforced"
+    severity: medium
+    cis:
+      - {benchmark: "CIS HPE Aruba", control: "2.2.3", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*password\s+complexity'
+    remediation: "Configure: password complexity enable"
+
+  - id: ARUBA-AUTH-004
+    generic_id: AUTH-004
+    title: "Password aging must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "CIS HPE Aruba", control: "2.2.4", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*password\s+(aging|expire)\s+[0-9]+'
+    remediation: "Configure: password aging 90"
+
+  - id: ARUBA-AUTH-005
+    generic_id: AUTH-005
+    title: "Login failure lockout must be configured"
+    severity: high
+    cis:
+      - {benchmark: "CIS HPE Aruba", control: "2.2.5", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*(aaa\s+authentication\s+login.*lockout|login\s+block-for|password-policy\s+lockout)'
+    remediation: "Configure login lockout policy after failed attempts."
+
+  - id: ARUBA-SNMP-002
+    generic_id: SNMP-002
+    title: "SNMP community must be restricted by ACL"
+    severity: high
+    cis:
+      - {benchmark: "CIS HPE Aruba", control: "3.1.2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*snmp-server\s+community\s+\S+\s+(manager|operator)\s+\S+'
+    remediation: "Configure: snmp-server community X operator <acl>"
+
+  - id: ARUBA-SNMP-003
+    generic_id: SNMP-003
+    title: "SNMPv3 must be configured"
+    severity: high
+    cis:
+      - {benchmark: "CIS HPE Aruba", control: "3.1.3", level: 1}
+    probe:
+      type: required_regex
+      # AOS-S: 'snmpv3 user'; AOS-CX: 'snmp-server user ... v3'
+      pattern: '(?m)^\s*(snmpv3\s+user|snmp-server\s+user\s+\S+\s+\S+\s+v3\s+)'
+    remediation: "Configure SNMPv3 users with auth SHA and priv AES."
+
+  - id: ARUBA-SNMP-004
+    generic_id: SNMP-004
+    title: "SNMP trap host must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "CIS HPE Aruba", control: "3.1.4", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*snmp-server\s+(host|trap-target)\s+'
+    remediation: "Configure: snmp-server host <ip> trap-type all"
+
+  - id: ARUBA-LOG-002
+    generic_id: LOG-002
+    title: "Log timestamps must be configured"
+    severity: low
+    cis:
+      - {benchmark: "CIS HPE Aruba", control: "4.1.2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*(service\s+timestamps|logging\s+timestamp)'
+    remediation: "Configure: service timestamps log datetime"
+
+  - id: ARUBA-LOG-003
+    generic_id: LOG-003
+    title: "Logging severity level must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "CIS HPE Aruba", control: "4.1.3", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*logging\s+(severity|level|trap)\s+(informational|warning|major|errors)'
+    remediation: "Configure: logging severity warning"
+
+  - id: ARUBA-LOG-004
+    generic_id: LOG-004
+    title: "Logging source-interface must be configured"
+    severity: low
+    cis:
+      - {benchmark: "CIS HPE Aruba", control: "4.1.4", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*logging\s+source-interface\s+'
+    remediation: "Configure: logging source-interface loopback0"
+
+  - id: ARUBA-TIME-002
+    generic_id: TIME-002
+    title: "NTP authentication must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "CIS HPE Aruba", control: "5.1.2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*ntp\s+(authenticate|authentication-key)\s+'
+    remediation: "Configure: ntp authenticate; ntp authentication-key <id> md5 <key>"
+
+  - id: ARUBA-TIME-003
+    generic_id: TIME-003
+    title: "NTP trusted-key must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "CIS HPE Aruba", control: "5.1.3", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*ntp\s+trusted-key\s+'
+    remediation: "Configure: ntp trusted-key <key-id>"
+
+  - id: ARUBA-SVC-001
+    generic_id: SVC-001
+    title: "CDP must be disabled"
+    severity: medium
+    cis:
+      - {benchmark: "CIS HPE Aruba", control: "7.1.1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*no\s+cdp\s+(run|enable)'
+    remediation: "Configure: no cdp run"
+
+  - id: ARUBA-SVC-002
+    generic_id: SVC-002
+    title: "LLDP must be disabled or restricted"
+    severity: medium
+    cis:
+      - {benchmark: "CIS HPE Aruba", control: "7.1.2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*no\s+lldp\s+(run|enable|admin-status)'
+    remediation: "Configure: no lldp run"
+
+  - id: ARUBA-POLICY-002
+    generic_id: POLICY-002
+    title: "ICMP must be restricted"
+    severity: medium
+    cis:
+      - {benchmark: "CIS HPE Aruba", control: "6.1.2", level: 1}
+    probe:
+      type: forbidden_regex
+      pattern: '(?m)^\s*permit\s+(ip|icmp)\s+any\s+any\b'
+    remediation: "Replace permit-any-any ICMP rules with specific entries."
+
+  - id: ARUBA-POLICY-003
+    generic_id: POLICY-003
+    title: "Spanning-tree BPDU guard must be configured on access ports"
+    severity: medium
+    cis:
+      - {benchmark: "CIS HPE Aruba", control: "7.3.1", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: "BPDU guard must be checked per-interface on access ports. Cannot be validated globally without scoped_regex engine."
+    remediation: "Enable spanning-tree bpdu-guard on all access switch ports."
+
+  - id: ARUBA-POLICY-004
+    generic_id: POLICY-004
+    title: "802.1X port authentication must be configured for network access"
+    severity: high
+    cis:
+      - {benchmark: "CIS HPE Aruba", control: "7.3.2", level: 1}
+    probe:
+      type: manual
+      reason: "802.1X requires per-port and per-profile verification that cannot be validated without scoped_regex engine support."
+    remediation: "Configure 802.1X port-access: aaa port-access authenticator 1/1-24"
+
+  - id: ARUBA-POLICY-005
+    generic_id: POLICY-005
+    title: "IP directed-broadcast must be disabled"
+    severity: high
+    cis:
+      - {benchmark: "CIS HPE Aruba", control: "1.1.7", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*no\s+ip\s+directed-broadcast'
+    remediation: "Configure: no ip directed-broadcast"
+
+  - id: ARUBA-SNMP-005
+    generic_id: SNMP-005
+    title: "SNMP write access must not be enabled without ACL restriction"
+    severity: critical
+    cis:
+      - {benchmark: "CIS HPE Aruba", control: "3.1.5", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: "SNMP write (operator/manager) legitimacy depends on accompanying ACL; automated check cannot evaluate intent."
+    remediation: "If SNMP write is required, restrict with: snmp-server community X manager <acl>"
+
+  - id: ARUBA-MGMT-011
+    generic_id: MGMT-011
+    title: "Management VRF must be used to isolate management plane"
+    description: "Restricting management protocols to a dedicated VRF isolates management traffic from data plane."
+    severity: high
+    cis:
+      - {benchmark: "CIS HPE Aruba", control: "1.2.4", level: 1}
+    probe:
+      type: required_regex
+      # AOS-CX: ssh/https server bound to mgmt or oobm VRF
+      pattern: '(?m)^\s*(ssh\s+server\s+vrf\s+(mgmt|oobm)|https-server\s+vrf\s+(mgmt|oobm))'
+    remediation: "Configure: ssh server vrf mgmt; https-server vrf mgmt"
+
+  - id: ARUBA-MGMT-012
+    generic_id: MGMT-012
+    title: "Login success logging must be enabled"
+    severity: low
+    cis:
+      - {benchmark: "CIS HPE Aruba", control: "4.1.5", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*logging\s+(session|login)\s+'
+    remediation: "Configure: logging session all"
+
+  - id: ARUBA-MGMT-013
+    generic_id: MGMT-013
+    title: "RADIUS server must be configured"
+    severity: high
+    cis:
+      - {benchmark: "CIS HPE Aruba", control: "2.1.5", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*(radius-server\s+host|radius\s+server\s+\S)'
+    remediation: "Configure: radius-server host <ip> key <key>"
+
+  - id: ARUBA-TIME-004
+    generic_id: TIME-004
+    title: "NTP restrict must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "CIS HPE Aruba", control: "5.1.4", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*ntp\s+restrict\s+'
+    remediation: "Configure NTP access restriction: ntp restrict <server-ip>"
+
+  - id: ARUBA-AUTH-006
+    generic_id: AUTH-006
+    title: "VTY transport input must be restricted to SSH"
+    severity: critical
+    cis:
+      - {benchmark: "CIS HPE Aruba", control: "1.2.5", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*transport\s+input\s+ssh\s*$'
+      scope: "^line vty"
+    remediation: "Under 'line vty': transport input ssh"

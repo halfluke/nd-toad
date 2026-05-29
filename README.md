@@ -10,7 +10,7 @@
 
 # ND-TOAD — Network Device Toad Auditing Tool
 
-Offline network device configuration security auditor with **CIS Level 1 mapping** across 14 vendor/platform profiles.
+Offline network device configuration security auditor with **CIS Level 1 mapping** across 18 vendor/platform profiles.
 
 ND-TOAD reads static config files — no live device access, no API keys, no agents — and produces structured security findings mapped to CIS benchmark controls. Each finding has a `pass / fail / manual / not_applicable` status, severity, evidence (the offending config lines), and remediation guidance.
 
@@ -18,28 +18,32 @@ ND-TOAD reads static config files — no live device access, no API keys, no age
 
 ## Supported platforms
 
-| Profile | Vendor | Input format | Reference benchmark / guide |
-|---------|--------|-------------|---------------------------|
-| `cisco_ios` | Cisco | `show running-config` plain text | [CIS Cisco IOS 17.x v2.0.0](https://www.cisecurity.org/benchmark/cisco) |
-| `cisco_asa` | Cisco | `show running-config` plain text | [CIS Cisco ASA 9.x Firewall v1.1.0](https://www.cisecurity.org/benchmark/cisco) |
-| `cisco_nxos` | Cisco | `show running-config` plain text | [CIS Cisco NX-OS v1.2.0](https://www.cisecurity.org/benchmark/cisco) |
-| `cisco_ftd` | Cisco | ASA-shaped CLI plain text | [CIS Cisco Firepower Threat Defense v1.0.0](https://www.cisecurity.org/benchmark/cisco) |
-| `arista_eos` | Arista | `show running-config` plain text | [DISA Arista MLS EOS 4.X STIG](https://public.cyber.mil/stigs/downloads/) ¹ |
-| `hpe_aruba` | HPE | `show running-config` plain text | [HPE AOS-CX Hardening Guide 10.14](https://arubanetworking.hpe.com/techdocs/AOS-CX/10.14/PDF/hardening.pdf) ¹ |
-| `fortios` | Fortinet | Full config `.conf` text (GUI Backup → Full Config) | [CIS FortiGate 7.4.x v1.0.1](https://www.cisecurity.org/benchmark/fortinet) |
-| `junos` | Juniper | Set format **or** curly-brace format plain text | [CIS Juniper OS v2.1.0](https://www.cisecurity.org/benchmark/juniper/) |
-| `palo_alto` | Palo Alto | Named config snapshot `.xml` (Device → Export) | [CIS Palo Alto Firewall 11 v1.2.0](https://www.cisecurity.org/benchmark/palo_alto_networks) |
-| `checkpoint` | Check Point | Gaia OS `show configuration` plain text ⚠ OS layer only | [CIS Check Point Firewall v1.1.0](https://www.cisecurity.org/benchmark/checkpoint_firewall) |
-| `sophos_xg` | Sophos | `Entities.xml` from Import-Export `.tar` ⚠ not Backup | [CIS Sophos Firewall v21/v22 v1.0.0](https://www.cisecurity.org/benchmark/sophos) |
-| `sonicwall` | SonicWall | E-CLI text (`export current-config cli`) ⚠ not `.exp` | [SonicWall Firewall Best Practices KB](https://www.sonicwall.com/support/knowledge-base/best-practices-for-administrator-managing-sonicwall-firewall-appliances/kA1VN0000000Jyv0AE) ¹ |
-| `nokia_sros` | Nokia | Classic CLI **or** MD-CLI flat text (`admin save`) | [Nokia SR OS Security — System Management Guide](https://documentation.nokia.com/sr/24-7/7x50-shared/system-management/security-system-management.html) ¹ |
-| `nokia_srl` | Nokia | JSON export **or** flat CLI set format (`info flat`) | [Nokia SR Linux Security — Configuration Basics Guide](https://documentation.nokia.com/srlinux/22-6/SR_Linux_Book_Files/Configuration_Basics_Guide/configb-security.html) ¹ |
+| Profile | Vendor | Checks | Input format | Reference benchmark / guide |
+|---------|--------|:------:|-------------|---------------------------|
+| `cisco_ios` | Cisco | 45 | `show running-config` plain text | [CIS Cisco IOS 17.x v2.0.0](https://www.cisecurity.org/benchmark/cisco) |
+| `cisco_asa` | Cisco | 35 | `show running-config` plain text | [CIS Cisco ASA 9.x Firewall v1.1.0](https://www.cisecurity.org/benchmark/cisco) |
+| `cisco_nxos` | Cisco | 38 | `show running-config` plain text | [CIS Cisco NX-OS v1.2.0](https://www.cisecurity.org/benchmark/cisco) |
+| `cisco_ftd` | Cisco | 30 | ASA-shaped CLI plain text | [CIS Cisco Firepower Threat Defense v1.0.0](https://www.cisecurity.org/benchmark/cisco) |
+| `cisco_xe` | Cisco | 53 | `show running-config` plain text (IOS-XE) | [CIS Cisco IOS 17 Benchmark](https://www.cisecurity.org/benchmark/cisco) |
+| `cisco_xr` | Cisco | 33 | `show running-config committed` (IOS-XR) | [Cisco IOS-XR Hardening Guide](https://sec.cloudapps.cisco.com/security/center/resources/ios_xr_hardening.html) ¹ |
+| `arista_eos` | Arista | 42 | `show running-config` plain text | [DISA Arista MLS EOS 4.X STIG](https://public.cyber.mil/stigs/downloads/) ¹ |
+| `hpe_aruba` | HPE | 43 | `show running-config` plain text | [HPE AOS-CX Hardening Guide 10.14](https://arubanetworking.hpe.com/techdocs/AOS-CX/10.14/PDF/hardening.pdf) ¹ |
+| `fortios` | Fortinet | 45 | Full config `.conf` text (GUI Backup → Full Config) | [CIS FortiGate 7.4.x v1.0.1](https://www.cisecurity.org/benchmark/fortinet) |
+| `junos` | Juniper | 59 | Set format **or** curly-brace format plain text | [CIS Juniper OS v2.1.0](https://www.cisecurity.org/benchmark/juniper/) |
+| `palo_alto` | Palo Alto | 25 | Named config snapshot `.xml` (Device → Export) | [CIS Palo Alto Firewall 11 v1.2.0](https://www.cisecurity.org/benchmark/palo_alto_networks) |
+| `checkpoint` | Check Point | 18 | Gaia OS `show configuration` plain text ⚠ OS layer only | [CIS Check Point Firewall v1.1.0](https://www.cisecurity.org/benchmark/checkpoint_firewall) |
+| `sophos_xg` | Sophos | 15 | `Entities.xml` from Import-Export `.tar` ⚠ not Backup | [CIS Sophos Firewall v21/v22 v1.0.0](https://www.cisecurity.org/benchmark/sophos) |
+| `sonicwall` | SonicWall | 14 | E-CLI text (`export current-config cli`) ⚠ not `.exp` | [DISA SonicWall STIG](https://public.cyber.mil/stigs/downloads/) ¹ |
+| `nokia_sros` | Nokia | 52 | Classic CLI **or** MD-CLI flat text (`admin save`) | [Nokia SR OS Security — System Management Guide](https://documentation.nokia.com/sr/24-7/7x50-shared/system-management/security-system-management.html) ¹ |
+| `nokia_srl` | Nokia | 15 | JSON export **or** flat CLI set format (`info flat`) | [Nokia SR Linux Security — Configuration Basics Guide](https://documentation.nokia.com/srlinux/22-6/SR_Linux_Book_Files/Configuration_Basics_Guide/configb-security.html) ¹ |
+| `huawei_vrp` | Huawei | 37 | `display current-configuration` plain text | [Huawei VRP Security Hardening Guide](https://support.huawei.com/enterprise/en/doc/EDOC1100278601) ¹ |
+| `f5_bigip` | F5 | 28 | TMSH SCF export (`tmsh save /sys config`) | [CIS F5 BIG-IP LTM 12 v1.0.0](https://www.cisecurity.org/benchmark/f5) |
 
-> ¹ No dedicated CIS benchmark available for this platform. Checks are based on the linked official vendor hardening documentation and generic network device hardening best practices.
+> ¹ No dedicated CIS benchmark available for this platform. Checks are based on the linked official vendor hardening documentation and DISA STIG guidance.
 >
 > Benchmark versions shown were the latest available in **May 2026**. CIS publishes updates monthly — visit the linked page before each audit to confirm you are working from the current version. PDFs are freely downloadable **without registration** from [downloads.cisecurity.org](https://downloads.cisecurity.org/#/).
 
-**186 security checks** across all 14 profiles — 159 automated probes + 27 manual-only entries. CIS L1 controls that cannot be reliably automated from a static config file are emitted as `status: manual` for human review.
+**627 security checks** across all 18 profiles — 555 automated probes + 22 manual entries + 50 manual (fp-risk) entries. CIS L1 controls that cannot be reliably automated from a static config file without a high risk of false positives are emitted as `status: manual [fp risk]` for human review.
 
 ---
 
@@ -198,6 +202,8 @@ This section explains precisely **which export or copy-paste format** each vendo
 | `cisco_asa` | `.txt` `.conf` | `show running-config` | — |
 | `cisco_nxos` | `.txt` `.conf` | `show running-config` | — |
 | `cisco_ftd` | `.txt` `.conf` | `show running-config` | — |
+| `cisco_xe` | `.txt` `.conf` | `show running-config` | — |
+| `cisco_xr` | `.txt` `.conf` | `show running-config committed` | — |
 | `arista_eos` | `.txt` `.conf` | `show running-config` | — |
 | `hpe_aruba` | `.txt` `.conf` | `show running-config` | — |
 | `fortios` | `.conf` `.txt` | GUI: Backup → Full Config | **No** — passphrase-encrypted backup |
@@ -208,6 +214,8 @@ This section explains precisely **which export or copy-paste format** each vendo
 | `sonicwall` | `.txt` `.conf` | `export current-config cli ftp …` | **No** — `.exp` files not supported |
 | `nokia_sros` | `.txt` `.conf` | `admin save` / `admin save flat` | — |
 | `nokia_srl` | `.json` `.txt` | `info flat \| as json` | — |
+| `huawei_vrp` | `.txt` `.conf` | `display current-configuration` | — |
+| `f5_bigip` | `.txt` `.conf` `.scf` | `tmsh save /sys config` → SCF archive | **No** — UCS archive (`.ucs`) not parsed |
 
 ---
 

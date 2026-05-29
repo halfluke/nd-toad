@@ -15,6 +15,8 @@ _LOADERS: dict[str, str] = {
     "cisco_asa":   "fluff.parsers.cisco_asa",
     "cisco_nxos":  "fluff.parsers.cisco_nxos",
     "cisco_ftd":   "fluff.parsers.cisco_ftd",
+    "cisco_xe":    "fluff.parsers.cisco_xe",
+    "cisco_xr":    "fluff.parsers.cisco_xr",
     "arista_eos":  "fluff.parsers.arista_eos",
     "hpe_aruba":   "fluff.parsers.hpe_aruba",
     "fortios":     "fluff.parsers.fortios",
@@ -25,6 +27,8 @@ _LOADERS: dict[str, str] = {
     "sonicwall":   "fluff.parsers.sonicwall",
     "nokia_sros":  "fluff.parsers.nokia_sros",
     "nokia_srl":   "fluff.parsers.nokia_srl",
+    "huawei_vrp":  "fluff.parsers.huawei_vrp",
+    "f5_bigip":    "fluff.parsers.f5_bigip",
 }
 
 

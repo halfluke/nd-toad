@@ -104,6 +104,93 @@ class TestNokiaSRLParser:
         assert config.get_hostname() == "SRL-NODE-01"
 
 
+class TestCiscoXEParser:
+    @pytest.fixture(autouse=True)
+    def setup(self) -> None:
+        path = FIXTURES_DIR / "cisco_xe" / "good.conf"
+        self.config = load_config(path, "cisco_xe")
+
+    def test_vendor_and_profile(self) -> None:
+        assert self.config.vendor == "cisco"
+        assert self.config.profile == "cisco_xe"
+
+    def test_hostname_extraction(self) -> None:
+        assert self.config.get_hostname() == "XE-DIST-01"
+
+    def test_find_lines(self) -> None:
+        lines = self.config.find_lines(r"ntp server")
+        assert len(lines) >= 1
+
+    def test_text_attribute(self) -> None:
+        assert "platform type" in self.config.text
+
+
+class TestCiscoXRParser:
+    @pytest.fixture(autouse=True)
+    def setup(self) -> None:
+        path = FIXTURES_DIR / "cisco_xr" / "good.conf"
+        self.config = load_config(path, "cisco_xr")
+
+    def test_vendor_and_profile(self) -> None:
+        assert self.config.vendor == "cisco"
+        assert self.config.profile == "cisco_xr"
+
+    def test_hostname_extraction(self) -> None:
+        assert self.config.get_hostname() == "XR-CORE-01"
+
+    def test_find_lines(self) -> None:
+        lines = self.config.find_lines(r"ssh server v2")
+        assert len(lines) >= 1
+
+    def test_text_attribute(self) -> None:
+        assert "IOS XR" in self.config.text
+
+
+class TestHuaweiVRPParser:
+    @pytest.fixture(autouse=True)
+    def setup(self) -> None:
+        path = FIXTURES_DIR / "huawei_vrp" / "good.conf"
+        self.config = load_config(path, "huawei_vrp")
+
+    def test_vendor_and_profile(self) -> None:
+        assert self.config.vendor == "huawei"
+        assert self.config.profile == "huawei_vrp"
+
+    def test_hostname_extraction(self) -> None:
+        assert self.config.get_hostname() == "VRP-CORE-01"
+
+    def test_find_lines(self) -> None:
+        lines = self.config.find_lines(r"stelnet server enable")
+        assert len(lines) >= 1
+
+    def test_text_attribute(self) -> None:
+        assert "sysname" in self.config.text
+
+
+class TestF5BigIPParser:
+    @pytest.fixture(autouse=True)
+    def setup(self) -> None:
+        path = FIXTURES_DIR / "f5_bigip" / "good.conf"
+        self.config = load_config(path, "f5_bigip")
+
+    def test_vendor_and_profile(self) -> None:
+        assert self.config.vendor == "f5"
+        assert self.config.profile == "f5_bigip"
+
+    def test_hostname_extraction(self) -> None:
+        # get_hostname extracts from "hostname <fqdn>"
+        hostname = self.config.get_hostname()
+        assert hostname is not None
+        assert "bigip" in hostname.lower()
+
+    def test_find_lines(self) -> None:
+        lines = self.config.find_lines(r"TMSH-VERSION")
+        assert len(lines) >= 1
+
+    def test_text_attribute(self) -> None:
+        assert "sys global-settings" in self.config.text
+
+
 def test_unknown_profile_raises() -> None:
     with pytest.raises(ValueError, match="Unknown profile"):
         load_config(Path("/dev/null"), "nonexistent_vendor")

@@ -141,3 +141,340 @@ checks:
       type: required_regex
       pattern: '(?m)^\s*policy-map\s+type\s+control-plane'
     remediation: "Configure a CoPP policy-map and apply it to: control-plane  service-policy input <name>"
+
+  # ── Additional CIS Arista EOS L1 controls ────────────────────────────────
+
+  - id: EOS-MGMT-006
+    generic_id: MGMT-006
+    title: "VTY lines must have exec-timeout configured"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Arista EOS", control: "1.2.2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*exec-timeout\s+[1-9]'
+      scope: "^line vty"
+    remediation: "Under 'line vty': exec-timeout 10 0"
+
+  - id: EOS-MGMT-007
+    generic_id: MGMT-007
+    title: "Console line must have exec-timeout configured"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Arista EOS", control: "1.2.3", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*exec-timeout\s+[1-9]'
+      scope: "^line console"
+    remediation: "Under 'line console 0': exec-timeout 10 0"
+
+  - id: EOS-MGMT-008
+    generic_id: MGMT-008
+    title: "Management SSH must have an IP access-group configured"
+    severity: high
+    cis:
+      - {benchmark: "CIS Arista EOS", control: "1.2.4", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*ip\s+access-group\s+\S+\s+(in|vrf)'
+      scope: "(?m)^management ssh"
+    remediation: "Under 'management ssh': ip access-group <mgmt-acl> in"
+
+  - id: EOS-MGMT-009
+    generic_id: MGMT-009
+    title: "Login on-failure logging must be enabled"
+    description: "Logging failed login attempts provides visibility into brute-force attacks."
+    severity: high
+    cis:
+      - {benchmark: "CIS Arista EOS", control: "1.2.5", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*login\s+on-failure\s+log'
+    remediation: "Configure: login on-failure log"
+
+  - id: EOS-MGMT-010
+    generic_id: MGMT-010
+    title: "Login on-success logging must be enabled"
+    severity: low
+    cis:
+      - {benchmark: "CIS Arista EOS", control: "1.2.6", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*login\s+on-success\s+log'
+    remediation: "Configure: login on-success log"
+
+  - id: EOS-MGMT-011
+    generic_id: MGMT-011
+    title: "Password minimum length must be configured"
+    severity: high
+    cis:
+      - {benchmark: "CIS Arista EOS", control: "2.2.1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*security\s+passwords\s+min-length\s+([89]|[1-9][0-9]+)'
+    remediation: "Configure: security passwords min-length 8"
+
+  - id: EOS-MGMT-012
+    generic_id: MGMT-012
+    title: "Management API must be restricted by access-group or VRF"
+    severity: high
+    cis:
+      - {benchmark: "CIS Arista EOS", control: "1.1.4", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*(ip\s+access-group\s+\S+|vrf\s+mgmt)'
+      scope: "(?m)^management api http-commands"
+    remediation: "Under 'management api http-commands': ip access-group <acl> in or restrict to vrf mgmt."
+
+  - id: EOS-AAA-002
+    generic_id: AAA-002
+    title: "AAA authorization must be configured for EXEC"
+    severity: high
+    cis:
+      - {benchmark: "CIS Arista EOS", control: "2.1.2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*aaa\s+authorization\s+exec\s+'
+    remediation: "Configure: aaa authorization exec default group radius local"
+
+  - id: EOS-AAA-003
+    generic_id: AAA-003
+    title: "TACACS+ server must be configured"
+    severity: high
+    cis:
+      - {benchmark: "CIS Arista EOS", control: "2.1.3", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*(tacacs-server\s+host|tacacs\s+server\s+\S)'
+    remediation: "Configure: tacacs-server host <ip> key <key> vrf mgmt"
+
+  - id: EOS-AAA-004
+    generic_id: AAA-004
+    title: "AAA accounting must be configured"
+    severity: high
+    cis:
+      - {benchmark: "CIS Arista EOS", control: "2.1.4", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*aaa\s+accounting\s+(exec|commands)\s+'
+    remediation: "Configure: aaa accounting exec default start-stop group radius"
+
+  - id: EOS-AUTH-002
+    generic_id: AUTH-002
+    title: "Enable secret must be configured"
+    severity: critical
+    cis:
+      - {benchmark: "CIS Arista EOS", control: "2.2.2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*enable\s+secret\s+'
+    remediation: "Configure: enable secret sha512 <hash>"
+
+  - id: EOS-AUTH-003
+    generic_id: AUTH-003
+    title: "Service password-encryption must be enabled"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Arista EOS", control: "2.2.3", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*service\s+password-encryption'
+    remediation: "Configure: service password-encryption"
+
+  - id: EOS-SNMP-002
+    generic_id: SNMP-002
+    title: "SNMP must be restricted by ACL"
+    severity: high
+    cis:
+      - {benchmark: "CIS Arista EOS", control: "3.1.2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*snmp-server\s+community\s+\S+\s+(ro|rw)\s+\S+'
+    remediation: "Append ACL to SNMP community: snmp-server community X ro <acl>"
+
+  - id: EOS-SNMP-003
+    generic_id: SNMP-003
+    title: "SNMPv3 user must be configured"
+    severity: high
+    cis:
+      - {benchmark: "CIS Arista EOS", control: "3.1.3", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*snmp-server\s+user\s+\S+\s+\S+\s+v3\s+'
+    remediation: "Configure: snmp-server user <user> <group> v3 auth sha <key> priv aes <key>"
+
+  - id: EOS-SNMP-004
+    generic_id: SNMP-004
+    title: "SNMP trap host must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Arista EOS", control: "3.1.4", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*snmp-server\s+host\s+'
+    remediation: "Configure: snmp-server host <ip> version 3 <user>"
+
+  - id: EOS-SNMP-005
+    generic_id: SNMP-005
+    title: "SNMP write access must not be configured without restriction"
+    severity: critical
+    cis:
+      - {benchmark: "CIS Arista EOS", control: "3.1.5", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: "SNMP RW may be legitimate when restricted to a management subnet. Cannot validate ACL intent automatically."
+    remediation: "If SNMP write is needed: snmp-server community X rw <acl-number>"
+
+  - id: EOS-LOG-002
+    generic_id: LOG-002
+    title: "Log timestamps must be configured"
+    severity: low
+    cis:
+      - {benchmark: "CIS Arista EOS", control: "4.1.2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*logging\s+format\s+timestamp\s+'
+    remediation: "Configure: logging format timestamp traditional"
+
+  - id: EOS-LOG-003
+    generic_id: LOG-003
+    title: "Logging buffered must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Arista EOS", control: "4.1.3", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*logging\s+buffered\s+[0-9]+'
+    remediation: "Configure: logging buffered 65536"
+
+  - id: EOS-LOG-004
+    generic_id: LOG-004
+    title: "Logging severity must be set"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Arista EOS", control: "4.1.4", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*logging\s+trap\s+(informational|notifications|warnings|errors)'
+    remediation: "Configure: logging trap informational"
+
+  - id: EOS-LOG-005
+    generic_id: LOG-005
+    title: "Logging source-interface must be configured"
+    severity: low
+    cis:
+      - {benchmark: "CIS Arista EOS", control: "4.1.5", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*logging\s+source-interface\s+'
+    remediation: "Configure: logging source-interface Loopback0"
+
+  - id: EOS-TIME-002
+    generic_id: TIME-002
+    title: "NTP authentication must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Arista EOS", control: "5.1.2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*ntp\s+authenticate'
+    remediation: "Configure: ntp authenticate; ntp authentication-key <id> md5 <key>; ntp trusted-key <id>"
+
+  - id: EOS-TIME-003
+    generic_id: TIME-003
+    title: "NTP trusted-key must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Arista EOS", control: "5.1.3", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*ntp\s+trusted-key\s+'
+    remediation: "Configure: ntp trusted-key <key-id>"
+
+  - id: EOS-SVC-001
+    generic_id: SVC-001
+    title: "CDP must be disabled"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Arista EOS", control: "7.1.1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*no\s+cdp\s+run'
+    remediation: "Configure: no cdp run"
+
+  - id: EOS-SVC-002
+    generic_id: SVC-002
+    title: "LLDP must be disabled"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Arista EOS", control: "7.1.2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*no\s+lldp\s+run'
+    remediation: "Configure: no lldp run"
+
+  - id: EOS-POLICY-002
+    generic_id: POLICY-002
+    title: "ICMP must be restricted (no blanket permit icmp any any)"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Arista EOS", control: "6.1.2", level: 1}
+    probe:
+      type: forbidden_regex
+      pattern: '(?m)^\s*permit\s+icmp\s+any\s+any\b'
+    remediation: "Restrict ICMP to required types and source/destination pairs."
+
+  - id: EOS-POLICY-003
+    generic_id: POLICY-003
+    title: "BGP session authentication must be configured"
+    severity: critical
+    cis:
+      - {benchmark: "CIS Arista EOS", control: "7.2.1", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: "Requires verifying each BGP peer has authentication configured; topology-dependent."
+    remediation: "Under 'router bgp' > neighbor X: password <key>"
+
+  - id: EOS-POLICY-004
+    generic_id: POLICY-004
+    title: "OSPF authentication must be configured"
+    severity: high
+    cis:
+      - {benchmark: "CIS Arista EOS", control: "7.2.2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?mi)(ospf.*message-digest|ip\s+ospf\s+message-digest-key|area.*authentication\s+message-digest)'
+    remediation: "Configure OSPF MD5 authentication on all OSPF interfaces."
+
+  - id: EOS-POLICY-005
+    generic_id: POLICY-005
+    title: "ACL deny entries must include logging"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Arista EOS", control: "6.1.3", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: "Requires per-ACE validation; cannot be expressed as a global regex."
+    remediation: "Append 'log' to all deny ACE entries."
+
+  - id: EOS-COPP-002
+    generic_id: POLICY-006
+    title: "CoPP class-default must rate-limit or drop excess traffic"
+    severity: high
+    cis:
+      - {benchmark: "CIS Arista EOS", control: "6.2.2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*class\s+class-default'
+    remediation: "Ensure the CoPP policy-map has a class-default entry with a policer to rate-limit unmatched traffic."
+
+  - id: EOS-MGMT-013
+    generic_id: MGMT-013
+    title: "IP source routing must be disabled"
+    severity: high
+    cis:
+      - {benchmark: "CIS Arista EOS", control: "7.3.1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*no\s+ip\s+source-route'
+    remediation: "Configure: no ip source-route"

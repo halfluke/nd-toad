@@ -1,0 +1,390 @@
+# Cisco IOS-XR compliance checks
+# Source: Cisco IOS-XR Hardening Guide (Cisco Systems, PSIRT guidance)
+# Used on: ASR 9K, NCS series, CRS (carrier-grade routers)
+
+vendor: cisco
+profile: cisco_xr
+checks:
+
+  # ── Management access ─────────────────────────────────────────────────────
+
+  - id: XR-MGMT-001
+    generic_id: MGMT-001
+    title: "Telnet server must be disabled"
+    severity: critical
+    cis:
+      - {benchmark: "Cisco IOS-XR Hardening Guide", control: "MGMT-1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^(no )?(telnet ipv4 server disable|telnet ipv6 server disable)'
+    remediation: "telnet ipv4 server disable\ntelnet ipv6 server disable"
+
+  - id: XR-MGMT-002
+    generic_id: MGMT-002
+    title: "SSH server must be enabled"
+    severity: critical
+    cis:
+      - {benchmark: "Cisco IOS-XR Hardening Guide", control: "MGMT-2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^ssh server v2'
+    remediation: "ssh server v2"
+
+  - id: XR-MGMT-003
+    generic_id: MGMT-003
+    title: "SSH server session limit must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "Cisco IOS-XR Hardening Guide", control: "MGMT-3", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^ssh server session-limit'
+    remediation: "ssh server session-limit 10"
+
+  - id: XR-MGMT-004
+    generic_id: MGMT-004
+    title: "HTTP server must be disabled"
+    severity: high
+    cis:
+      - {benchmark: "Cisco IOS-XR Hardening Guide", control: "MGMT-4", level: 1}
+    probe:
+      type: forbidden_regex
+      pattern: '(?m)^http server'
+    remediation: "no http server (IOS-XR does not enable HTTP by default)"
+
+  - id: XR-MGMT-005
+    generic_id: MGMT-005
+    title: "VTY exec-timeout must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "Cisco IOS-XR Hardening Guide", control: "MGMT-5", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?ms)line (vty|default).+?exec-timeout ([0-9]|1[0-5]) [0-5][0-9]'
+    remediation: "line default\n exec-timeout 10 0"
+
+  - id: XR-MGMT-006
+    generic_id: MGMT-006
+    title: "Login banner must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "Cisco IOS-XR Hardening Guide", control: "MGMT-6", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^banner (login|motd)'
+    remediation: "banner login ^Authorized access only^"
+
+  - id: XR-MGMT-007
+    generic_id: MGMT-007
+    title: "Management interface must use dedicated VRF"
+    severity: high
+    cis:
+      - {benchmark: "Cisco IOS-XR Hardening Guide", control: "MGMT-7", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^(vrf Mgmt-intf|interface MgmtEth\S+\s*\n\s+vrf)'
+    remediation: "Configure a dedicated management VRF and bind it to the MgmtEth interface."
+
+  - id: XR-MGMT-008
+    generic_id: MGMT-008
+    title: "SSH host key must be generated"
+    severity: high
+    cis:
+      - {benchmark: "Cisco IOS-XR Hardening Guide", control: "MGMT-8", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^crypto key generate rsa'
+    remediation: "crypto key generate rsa"
+
+  # ── AAA ───────────────────────────────────────────────────────────────────
+
+  - id: XR-AAA-001
+    generic_id: AAA-001
+    title: "AAA must be enabled with external authentication"
+    severity: critical
+    cis:
+      - {benchmark: "Cisco IOS-XR Hardening Guide", control: "AAA-1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^aaa authentication login default group (tacacs\+|radius)'
+    remediation: "aaa authentication login default group tacacs+ local"
+
+  - id: XR-AAA-002
+    generic_id: AAA-002
+    title: "TACACS+ server must be configured"
+    severity: high
+    cis:
+      - {benchmark: "Cisco IOS-XR Hardening Guide", control: "AAA-2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^(tacacs-server host|tacacs server)'
+    remediation: "tacacs-server host <ip> key <secret>"
+
+  - id: XR-AAA-003
+    generic_id: AAA-003
+    title: "AAA accounting for exec sessions must be configured"
+    severity: high
+    cis:
+      - {benchmark: "Cisco IOS-XR Hardening Guide", control: "AAA-3", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^aaa accounting exec'
+    remediation: "aaa accounting exec default start-stop group tacacs+"
+
+  - id: XR-AAA-004
+    generic_id: AAA-004
+    title: "AAA accounting for commands must be configured"
+    severity: high
+    cis:
+      - {benchmark: "Cisco IOS-XR Hardening Guide", control: "AAA-4", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^aaa accounting (commands|system)'
+    remediation: "aaa accounting commands default start-stop group tacacs+"
+
+  - id: XR-AAA-005
+    generic_id: AAA-005
+    title: "Task-based access must restrict privilege levels"
+    severity: high
+    cis:
+      - {benchmark: "Cisco IOS-XR Hardening Guide", control: "AAA-5", level: 1}
+    probe:
+      type: required_regex
+      # XR uses task-group and usergroup instead of privilege levels
+      pattern: '(?m)^(task-group|usergroup)\s+\S+'
+    remediation: "Define task-groups with least-privilege task permissions and assign users to appropriate usergroups."
+
+  - id: XR-AAA-006
+    generic_id: AAA-006
+    title: "Local fallback user must not use weak password"
+    severity: high
+    cis:
+      - {benchmark: "Cisco IOS-XR Hardening Guide", control: "AAA-6", level: 1}
+    probe:
+      type: required_regex
+      # XR local user: username <user> password (encrypted | 7 | secret)
+      pattern: '(?m)^username \S+ (secret|password 7)'
+    remediation: "Use encrypted password: username <user> secret <password>"
+
+  # ── SNMP ──────────────────────────────────────────────────────────────────
+
+  - id: XR-SNMP-001
+    generic_id: SNMP-001
+    title: "SNMPv3 must be configured"
+    severity: high
+    cis:
+      - {benchmark: "Cisco IOS-XR Hardening Guide", control: "SNMP-1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^snmp-server group \S+ v3 priv'
+    remediation: "snmp-server group <name> v3 priv\nsnmp-server user <user> <group> v3 auth sha <key> priv aes 128 <key>"
+
+  - id: XR-SNMP-002
+    generic_id: SNMP-002
+    title: "SNMP community strings must not be configured"
+    severity: critical
+    cis:
+      - {benchmark: "Cisco IOS-XR Hardening Guide", control: "SNMP-2", level: 1}
+    probe:
+      type: forbidden_regex
+      pattern: '(?m)^snmp-server community '
+    remediation: "Remove all community strings: no snmp-server community <name>. Use SNMPv3 exclusively."
+
+  - id: XR-SNMP-003
+    generic_id: SNMP-003
+    title: "SNMP must have ACL restricting access"
+    severity: high
+    cis:
+      - {benchmark: "Cisco IOS-XR Hardening Guide", control: "SNMP-3", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^snmp-server (ipv4 access-list|ipv6 access-list)'
+    remediation: "snmp-server ipv4 access-list <acl> <name>"
+
+  - id: XR-SNMP-004
+    generic_id: SNMP-004
+    title: "SNMP trap source must be configured"
+    severity: low
+    cis:
+      - {benchmark: "Cisco IOS-XR Hardening Guide", control: "SNMP-4", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^snmp-server trap-source'
+    remediation: "snmp-server trap-source Loopback0"
+
+  # ── NTP ───────────────────────────────────────────────────────────────────
+
+  - id: XR-TIME-001
+    generic_id: TIME-001
+    title: "NTP server must be configured"
+    severity: high
+    cis:
+      - {benchmark: "Cisco IOS-XR Hardening Guide", control: "TIME-1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^ntp\s*\n\s+server'
+    remediation: "ntp\n server <ip> prefer"
+
+  - id: XR-TIME-002
+    generic_id: TIME-002
+    title: "NTP authentication must be configured"
+    severity: high
+    cis:
+      - {benchmark: "Cisco IOS-XR Hardening Guide", control: "TIME-2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s+authentication-key \d+ md5'
+    remediation: "ntp\n authenticate\n authentication-key 1 md5 <key>\n trusted-key 1"
+
+  - id: XR-TIME-003
+    generic_id: TIME-003
+    title: "NTP access-group must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "Cisco IOS-XR Hardening Guide", control: "TIME-3", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s+access-group ipv4 (serve-only|query-only|peer|serve)'
+    remediation: "ntp\n access-group ipv4 serve-only <acl>"
+
+  # ── Logging ───────────────────────────────────────────────────────────────
+
+  - id: XR-LOG-001
+    generic_id: LOG-001
+    title: "Syslog server must be configured"
+    severity: high
+    cis:
+      - {benchmark: "Cisco IOS-XR Hardening Guide", control: "LOG-1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^logging \d+\.\d+\.\d+\.\d+'
+    remediation: "logging <syslog-server-ip>"
+
+  - id: XR-LOG-002
+    generic_id: LOG-002
+    title: "Logging severity must be informational or higher"
+    severity: medium
+    cis:
+      - {benchmark: "Cisco IOS-XR Hardening Guide", control: "LOG-2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^logging console (informational|debugging|notifications|disable|6|7)'
+    remediation: "logging console informational"
+
+  - id: XR-LOG-003
+    generic_id: LOG-003
+    title: "Logging source-interface must be configured"
+    severity: low
+    cis:
+      - {benchmark: "Cisco IOS-XR Hardening Guide", control: "LOG-3", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^logging source-interface'
+    remediation: "logging source-interface Loopback0"
+
+  - id: XR-LOG-004
+    generic_id: LOG-004
+    title: "Service timestamps must be configured"
+    severity: low
+    cis:
+      - {benchmark: "Cisco IOS-XR Hardening Guide", control: "LOG-4", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^service timestamps log datetime'
+    remediation: "service timestamps log datetime msec"
+
+  # ── IP services ───────────────────────────────────────────────────────────
+
+  - id: XR-SVC-001
+    generic_id: SVC-001
+    title: "IP source routing must be disabled"
+    severity: high
+    cis:
+      - {benchmark: "Cisco IOS-XR Hardening Guide", control: "SVC-1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^no ipv4 source-route'
+    remediation: "no ipv4 source-route"
+
+  - id: XR-SVC-002
+    generic_id: SVC-002
+    title: "IP redirects must be disabled"
+    severity: medium
+    cis:
+      - {benchmark: "Cisco IOS-XR Hardening Guide", control: "SVC-2", level: 1}
+    probe:
+      type: forbidden_regex
+      pattern: '(?m)^\s+ipv4 redirects'
+    remediation: "no ipv4 redirects (default is off in XR)"
+
+  - id: XR-SVC-003
+    generic_id: SVC-003
+    title: "MPP (Management Plane Protection) must be configured"
+    severity: high
+    cis:
+      - {benchmark: "Cisco IOS-XR Hardening Guide", control: "SVC-3", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^control-plane\s*\n\s+management-plane'
+    remediation: |
+      control-plane
+       management-plane
+        out-of-band
+         interface MgmtEth0/0/CPU0/0
+          allow SSH
+          allow SNMP peer address <mgmt-prefix>
+
+  - id: XR-SVC-004
+    generic_id: SVC-004
+    title: "BGP must use TCP MD5 authentication"
+    severity: high
+    cis:
+      - {benchmark: "Cisco IOS-XR Hardening Guide", control: "SVC-4", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: "Requires per-peer verification that password is set; topology-dependent."
+    remediation: "Under router bgp X neighbor-group or neighbor Y: password <key>"
+
+  - id: XR-SVC-005
+    generic_id: SVC-005
+    title: "LLDP must be disabled"
+    severity: medium
+    cis:
+      - {benchmark: "Cisco IOS-XR Hardening Guide", control: "SVC-5", level: 1}
+    probe:
+      type: forbidden_regex
+      pattern: '(?m)^lldp\s*$'
+    remediation: "no lldp (or do not configure the lldp block)"
+
+  - id: XR-POLICY-001
+    generic_id: POLICY-001
+    title: "Prefix-list or route-policy must filter BGP routes"
+    severity: high
+    cis:
+      - {benchmark: "Cisco IOS-XR Hardening Guide", control: "POL-1", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: "Route-policy content and direction must be validated per peer; cannot determine automatically."
+    remediation: "Apply route-policy to all eBGP peers for inbound and outbound prefix filtering."
+
+  - id: XR-POLICY-002
+    generic_id: POLICY-002
+    title: "BGP maximum-prefix limit must be configured for eBGP peers"
+    severity: high
+    cis:
+      - {benchmark: "Cisco IOS-XR Hardening Guide", control: "POL-2", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: "Maximum prefix is per-peer; appropriate value depends on topology."
+    remediation: "router bgp X neighbor <ip> address-family ipv4 unicast maximum-prefix <n>"
+
+  - id: XR-MGMT-009
+    generic_id: MGMT-009
+    title: "Service password-encryption must be enabled"
+    severity: medium
+    cis:
+      - {benchmark: "Cisco IOS-XR Hardening Guide", control: "MGMT-9", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: "IOS-XR uses type-7 or type-9 encryption per-service; no global 'service password-encryption' command exists."
+    remediation: "Use 'secret' keyword for all passwords instead of 'password' to ensure type-9 hashing."

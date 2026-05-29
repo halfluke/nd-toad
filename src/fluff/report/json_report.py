@@ -41,7 +41,7 @@ def _aggregate_status(findings: list[dict]) -> str:
         return Status.FAIL.value
     if Status.PASS.value in statuses:
         return Status.PASS.value
-    if Status.MANUAL.value in statuses:
+    if Status.MANUAL.value in statuses or Status.MANUAL_FP_RISK.value in statuses:
         return Status.MANUAL.value
     return Status.NOT_APPLICABLE.value
 

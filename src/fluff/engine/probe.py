@@ -6,7 +6,8 @@ Supported probe types in vendor YAML:
   forbidden_regex   — FAIL if pattern is found anywhere in config text
   required_regex    — FAIL if pattern is NOT found in config text
   hook              — delegate to a Python function in fluff.hooks.*
-  manual            — always emit Status.MANUAL (used as a sentinel in YAML)
+  manual            — always emit Status.MANUAL (genuinely cannot be automated)
+  manual_fp_risk    — always emit Status.MANUAL_FP_RISK (automatable but kept manual due to false-positive risk)
 """
 
 from __future__ import annotations
@@ -40,6 +41,8 @@ def run_probe(probe_def: dict[str, Any], config: "ParsedConfig") -> ProbeResult:
         return _hook(probe_def, config)
     if probe_type == "manual":
         return ProbeResult(status=Status.MANUAL, evidence=[])
+    if probe_type == "manual_fp_risk":
+        return ProbeResult(status=Status.MANUAL_FP_RISK, evidence=[])
     if probe_type == "not_applicable":
         return ProbeResult(status=Status.NOT_APPLICABLE, evidence=[])
 

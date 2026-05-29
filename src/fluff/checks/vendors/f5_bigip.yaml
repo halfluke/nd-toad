@@ -1,0 +1,355 @@
+# F5 BIG-IP compliance checks
+# Source: CIS F5 BIG-IP LTM Benchmark (CIS F5 BIG-IP LTM 12)
+# Input format: TMSH configuration (tmsh list / SCF export)
+
+vendor: f5
+profile: f5_bigip
+checks:
+
+  # ── Management access ─────────────────────────────────────────────────────
+
+  - id: F5-MGMT-001
+    generic_id: MGMT-001
+    title: "SSH must be enabled and Telnet disabled"
+    severity: critical
+    cis:
+      - {benchmark: "CIS F5 BIG-IP LTM 12", control: "1.1.1", level: 1}
+    probe:
+      type: forbidden_regex
+      # BIG-IP: /sys service { telnet { enabled ... } }
+      pattern: '(?ms)sys\s+service[^{]*\{[^}]*telnet[^}]*enabled'
+    remediation: "In System > Platform: disable Telnet service. Enable SSH."
+
+  - id: F5-MGMT-002
+    generic_id: MGMT-002
+    title: "SSH inactivity timeout must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "CIS F5 BIG-IP LTM 12", control: "1.1.2", level: 1}
+    probe:
+      type: required_regex
+      # TMSH: sys sshd { inactivity-timeout 900 }
+      pattern: '(?ms)sys\s+sshd\s*\{[^}]*inactivity-timeout\s+[1-9]'
+    remediation: "tmsh modify sys sshd inactivity-timeout 900"
+
+  - id: F5-MGMT-003
+    generic_id: MGMT-003
+    title: "HTTPD must use TLS with strong ciphers"
+    severity: high
+    cis:
+      - {benchmark: "CIS F5 BIG-IP LTM 12", control: "1.1.3", level: 1}
+    probe:
+      type: required_regex
+      # TMSH: sys httpd { ssl-ciphersuite ... }
+      pattern: '(?ms)sys\s+httpd\s*\{[^}]*ssl-ciphersuite'
+    remediation: "tmsh modify sys httpd ssl-ciphersuite <strong-ciphers>"
+
+  - id: F5-MGMT-004
+    generic_id: MGMT-004
+    title: "HTTPD idle timeout must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "CIS F5 BIG-IP LTM 12", control: "1.1.4", level: 1}
+    probe:
+      type: required_regex
+      # TMSH: sys httpd { auth-pam-idle-timeout 900 }
+      pattern: '(?ms)sys\s+httpd\s*\{[^}]*auth-pam-idle-timeout\s+[1-9]'
+    remediation: "tmsh modify sys httpd auth-pam-idle-timeout 900"
+
+  - id: F5-MGMT-005
+    generic_id: MGMT-005
+    title: "HTTPD must restrict access by source address"
+    severity: high
+    cis:
+      - {benchmark: "CIS F5 BIG-IP LTM 12", control: "1.1.5", level: 1}
+    probe:
+      type: required_regex
+      # TMSH: sys httpd { allow { <ip-subnet> } }
+      pattern: '(?ms)sys\s+httpd\s*\{[^}]*allow\s*\{[^}]*\d{1,3}\.\d{1,3}'
+    remediation: "tmsh modify sys httpd allow add { <mgmt-subnet>/24 }"
+
+  - id: F5-MGMT-006
+    generic_id: MGMT-006
+    title: "Management interface must be used for admin traffic"
+    severity: high
+    cis:
+      - {benchmark: "CIS F5 BIG-IP LTM 12", control: "1.2.1", level: 1}
+    probe:
+      type: required_regex
+      # TMSH: sys global-settings { mgmt-dhcp disabled ... } or mgmt-ip configured
+      pattern: '(?ms)sys\s+global-settings\s*\{[^}]*(hostname|mgmt-dhcp)'
+    remediation: "Configure dedicated management IP. Set mgmt-dhcp disabled if static management is used."
+
+  - id: F5-MGMT-007
+    generic_id: MGMT-007
+    title: "NTP must be configured"
+    severity: high
+    cis:
+      - {benchmark: "CIS F5 BIG-IP LTM 12", control: "1.3.1", level: 1}
+    probe:
+      type: required_regex
+      # TMSH: sys ntp { servers { <ip> { } } }
+      pattern: '(?ms)sys\s+ntp\s*\{[^}]*servers\s*\{[^}]*\d'
+    remediation: "tmsh modify sys ntp servers add { <ntp-server> { version 4 } }"
+
+  - id: F5-MGMT-008
+    generic_id: MGMT-008
+    title: "Syslog must forward to remote server"
+    severity: high
+    cis:
+      - {benchmark: "CIS F5 BIG-IP LTM 12", control: "1.3.2", level: 1}
+    probe:
+      type: required_regex
+      # TMSH: sys syslog { remote-servers { server1 { host <ip> } } }
+      pattern: '(?ms)sys\s+syslog\s*\{[^}]*remote-servers\s*\{[^}]*host\s+\S+'
+    remediation: "tmsh modify sys syslog remote-servers add { <name> { host <ip> remote-port 514 } }"
+
+  - id: F5-MGMT-009
+    generic_id: MGMT-009
+    title: "DNS must be configured"
+    severity: low
+    cis:
+      - {benchmark: "CIS F5 BIG-IP LTM 12", control: "1.3.3", level: 1}
+    probe:
+      type: required_regex
+      # TMSH: sys dns { name-servers { <ip> } }
+      pattern: '(?ms)sys\s+dns\s*\{[^}]*name-servers\s*\{[^}]*\d'
+    remediation: "tmsh modify sys dns name-servers add { <dns-ip> }"
+
+  # ── Authentication ────────────────────────────────────────────────────────
+
+  - id: F5-AUTH-001
+    generic_id: AUTH-001
+    title: "Password policy must require minimum length"
+    severity: high
+    cis:
+      - {benchmark: "CIS F5 BIG-IP LTM 12", control: "2.1.1", level: 1}
+    probe:
+      type: required_regex
+      # TMSH: auth password-policy { min-length 8 }
+      pattern: '(?ms)auth\s+password-policy\s*\{[^}]*min-length\s+([89]|[1-9][0-9]+)'
+    remediation: "tmsh modify auth password-policy min-length 14"
+
+  - id: F5-AUTH-002
+    generic_id: AUTH-002
+    title: "Password policy must require complexity"
+    severity: high
+    cis:
+      - {benchmark: "CIS F5 BIG-IP LTM 12", control: "2.1.2", level: 1}
+    probe:
+      type: required_regex
+      # TMSH: auth password-policy { required-uppercase ... required-numeric ... }
+      pattern: '(?ms)auth\s+password-policy\s*\{[^}]*required-(uppercase|numeric|lowercase|special)\s+[1-9]'
+    remediation: "tmsh modify auth password-policy required-uppercase 1 required-lowercase 1 required-numeric 1 required-special 1"
+
+  - id: F5-AUTH-003
+    generic_id: AUTH-003
+    title: "Login failures must trigger lockout"
+    severity: high
+    cis:
+      - {benchmark: "CIS F5 BIG-IP LTM 12", control: "2.1.3", level: 1}
+    probe:
+      type: required_regex
+      # TMSH: auth password-policy { max-login-failures 5 }
+      pattern: '(?ms)auth\s+password-policy\s*\{[^}]*max-login-failures\s+[1-9]'
+    remediation: "tmsh modify auth password-policy max-login-failures 5"
+
+  - id: F5-AUTH-004
+    generic_id: AUTH-004
+    title: "Remote authentication (RADIUS/TACACS+) must be configured"
+    severity: high
+    cis:
+      - {benchmark: "CIS F5 BIG-IP LTM 12", control: "2.2.1", level: 1}
+    probe:
+      type: required_regex
+      # TMSH: auth tacacs|radius or auth source { type tacacs|radius }
+      pattern: '(?ms)auth\s+(tacacs|radius)\s+\S+\s*\{[^}]*server'
+    remediation: "Configure TACACS+ or RADIUS: auth tacacs <name> { servers { <ip> { } } }"
+
+  - id: F5-AUTH-005
+    generic_id: AUTH-005
+    title: "Admin account must not use default credentials"
+    severity: critical
+    cis:
+      - {benchmark: "CIS F5 BIG-IP LTM 12", control: "2.2.2", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: "Cannot validate whether admin password has been changed from default without runtime check."
+    remediation: "Change the default 'admin' password immediately after deployment."
+
+  - id: F5-AUTH-006
+    generic_id: AUTH-006
+    title: "Root account direct login must be restricted"
+    severity: high
+    cis:
+      - {benchmark: "CIS F5 BIG-IP LTM 12", control: "2.2.3", level: 1}
+    probe:
+      type: required_regex
+      # TMSH: sys sshd { allow { ... } deny-root ... }  (deny root SSH login)
+      # or: auth user root { description ... } (root user exists)
+      # Check if root password is configured (sshd-only if no direct auth)
+      pattern: '(?ms)sys\s+sshd\s*\{[^}]*(allowed-users|deny-root)'
+    remediation: "Restrict root SSH login. Use named admin accounts and sudo/tmsh for privileged operations."
+
+  # ── SNMP ──────────────────────────────────────────────────────────────────
+
+  - id: F5-SNMP-001
+    generic_id: SNMP-001
+    title: "SNMPv1/v2c community must not use default values"
+    severity: critical
+    cis:
+      - {benchmark: "CIS F5 BIG-IP LTM 12", control: "3.1.1", level: 1}
+    probe:
+      type: forbidden_regex
+      # TMSH: sys snmp { communities { default { community-name public } } }
+      pattern: '(?ms)sys\s+snmp[^}]*communities[^}]*community-name\s+(public|private)\b'
+    remediation: "Remove default community: tmsh delete sys snmp communities default; configure custom community."
+
+  - id: F5-SNMP-002
+    generic_id: SNMP-002
+    title: "SNMP access must be restricted to permitted managers"
+    severity: high
+    cis:
+      - {benchmark: "CIS F5 BIG-IP LTM 12", control: "3.1.2", level: 1}
+    probe:
+      type: required_regex
+      # TMSH: sys snmp { allowed-addresses { <mgmt-prefix> } }
+      pattern: '(?ms)sys\s+snmp\s*\{[^}]*allowed-addresses\s*\{[^}]*\d'
+    remediation: "tmsh modify sys snmp allowed-addresses replace-all-with { <mgmt-subnet>/24 }"
+
+  - id: F5-SNMP-003
+    generic_id: SNMP-003
+    title: "SNMP trap must use a configured destination"
+    severity: medium
+    cis:
+      - {benchmark: "CIS F5 BIG-IP LTM 12", control: "3.1.3", level: 1}
+    probe:
+      type: required_regex
+      # TMSH: sys snmp { traps { ... { host <ip> } } }
+      pattern: '(?ms)sys\s+snmp[^}]*traps[^}]*host\s+\S+'
+    remediation: "tmsh modify sys snmp traps add { <name> { host <syslog-ip> community <name> } }"
+
+  - id: F5-SNMP-004
+    generic_id: SNMP-004
+    title: "SNMPv3 must be configured for authenticated access"
+    severity: high
+    cis:
+      - {benchmark: "CIS F5 BIG-IP LTM 12", control: "3.1.4", level: 1}
+    probe:
+      type: required_regex
+      # TMSH: sys snmp { v3-users { <user> { auth-protocol sha privacy-protocol aes } } }
+      pattern: '(?ms)sys\s+snmp[^}]*v3-users[^}]*(auth-protocol|privacy-protocol)'
+    remediation: "Configure SNMPv3 user: tmsh create sys snmp v3-users <user> auth-protocol sha privacy-protocol aes"
+
+  # ── TLS/SSL profiles ──────────────────────────────────────────────────────
+
+  - id: F5-TLS-001
+    generic_id: TLS-001
+    title: "SSL profiles must not allow SSLv3 or TLS 1.0"
+    severity: high
+    cis:
+      - {benchmark: "CIS F5 BIG-IP LTM 12", control: "4.1.1", level: 1}
+    probe:
+      type: forbidden_regex
+      # TMSL: ltm profile client-ssl <name> { options { no-tlsv1 ... } } or options that include SSLv3
+      # Flag explicit allowance of sslv3 or tls1.0 in cipher/options
+      pattern: '(?ims)options\s*(none|\{[^}]*(dont-insert-empty-fragments|no-sslv3|no-tlsv1\.0)[^}]*\})'
+    remediation: "Configure SSL client/server profiles with options { no-sslv3 no-tlsv1 } and use TLS 1.2+."
+
+  - id: F5-TLS-002
+    generic_id: TLS-002
+    title: "Weak ciphers must be excluded from SSL profiles"
+    severity: high
+    cis:
+      - {benchmark: "CIS F5 BIG-IP LTM 12", control: "4.1.2", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: "Cipher string evaluation is context-specific and hard to determine compliance globally."
+    remediation: "Set ciphers to 'DEFAULT:!EXPORT:!RC4:!NULL:!MD5:!3DES:!aNULL' on all SSL profiles."
+
+  # ── iRules / Traffic policies ─────────────────────────────────────────────
+
+  - id: F5-POLICY-001
+    generic_id: POLICY-001
+    title: "iRules must not use deprecated or insecure constructs"
+    severity: medium
+    cis:
+      - {benchmark: "CIS F5 BIG-IP LTM 12", control: "5.1.1", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: "iRule security review requires reading and understanding each iRule's logic."
+    remediation: "Review all iRules for insecure constructs: unvalidated input, command injection, eval, debug logging."
+
+  - id: F5-POLICY-002
+    generic_id: POLICY-002
+    title: "Security policies must define explicit deny rules"
+    severity: high
+    cis:
+      - {benchmark: "CIS F5 BIG-IP LTM 12", control: "5.1.2", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: "Virtual server rule completeness requires per-VIP review; cannot determine from config alone."
+    remediation: "Ensure each virtual server has explicit fallback reject/drop action in its security policy."
+
+  # ── Logging ───────────────────────────────────────────────────────────────
+
+  - id: F5-LOG-001
+    generic_id: LOG-001
+    title: "Audit logging must be enabled"
+    severity: high
+    cis:
+      - {benchmark: "CIS F5 BIG-IP LTM 12", control: "6.1.1", level: 1}
+    probe:
+      type: required_regex
+      # TMSH: sys audit { include-local-syslog enabled } or auth user root auditlog
+      pattern: '(?ms)sys\s+(snmp|syslog|daemon-log-settings)[^{]*\{'
+    remediation: "Enable audit logging: tmsh modify sys db config.auditing value enabled"
+
+  - id: F5-LOG-002
+    generic_id: LOG-002
+    title: "Log publisher must be configured for security events"
+    severity: high
+    cis:
+      - {benchmark: "CIS F5 BIG-IP LTM 12", control: "6.1.2", level: 1}
+    probe:
+      type: required_regex
+      # TMSH: sys log-config publisher <name> { destinations { ... } }
+      pattern: '(?ms)sys\s+log-config\s+publisher\s+\S+\s*\{[^}]*destinations'
+    remediation: "Create a log publisher with syslog destination and bind it to the security log profile."
+
+  - id: F5-LOG-003
+    generic_id: LOG-003
+    title: "System event logging must forward to syslog"
+    severity: high
+    cis:
+      - {benchmark: "CIS F5 BIG-IP LTM 12", control: "6.1.3", level: 1}
+    probe:
+      type: required_regex
+      # Already checked in MGMT-008 but this is the specific security/event log check
+      pattern: '(?ms)sys\s+log-config\s+destination\s+(syslog|management-port)[^{]*\{'
+    remediation: "Configure sys log-config destination syslog with remote-syslog or management-port forwarding."
+
+  # ── Partitioning ──────────────────────────────────────────────────────────
+
+  - id: F5-MGMT-010
+    generic_id: MGMT-010
+    title: "Administrative partitions must be used for multi-tenant environments"
+    severity: medium
+    cis:
+      - {benchmark: "CIS F5 BIG-IP LTM 12", control: "7.1.1", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: "Partition usage depends on deployment model; automated check would produce false negatives."
+    remediation: "In multi-tenant deployments: create auth partition <name> and assign resources per partition."
+
+  - id: F5-MGMT-011
+    generic_id: MGMT-011
+    title: "User roles must use least privilege"
+    severity: high
+    cis:
+      - {benchmark: "CIS F5 BIG-IP LTM 12", control: "7.2.1", level: 1}
+    probe:
+      type: required_regex
+      # TMSH: auth user <name> { role ... } where role is not Administrator unless required
+      pattern: '(?ms)auth\s+user\s+\S+\s*\{[^}]*role\s+\S+'
+    remediation: "Assign the minimum required role to each user. Avoid using Administrator role for day-to-day operations."

@@ -93,3 +93,84 @@ checks:
     probe:
       type: manual
     remediation: "Review /system/aaa/authentication/local-users. Disable or delete accounts not required."
+
+  # ── Additional Nokia SR Linux Hardening controls ──────────────────────────
+
+  - id: SRL-MGMT-003
+    generic_id: MGMT-003
+    title: "gRPC management must use TLS"
+    severity: high
+    cis:
+      - {benchmark: "Nokia SR Linux Hardening", control: "1.1.2", level: 1}
+    probe:
+      type: forbidden_regex
+      # SR Linux: gRPC without TLS profile = cleartext management
+      pattern: '("tls-profile"\s*:\s*null|set / system grpc.*no-tls)'
+    remediation: "Configure TLS profile under /system/grpc/tls-profile."
+
+  - id: SRL-MGMT-004
+    generic_id: MGMT-004
+    title: "Login banner must be configured"
+    severity: low
+    cis:
+      - {benchmark: "Nokia SR Linux Hardening", control: "1.3.1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '("login-banner"|set / system login-banner)'
+    remediation: "Configure: set / system login-banner \"<legal notice>\""
+
+  - id: SRL-AAA-002
+    generic_id: AAA-002
+    title: "Authentication order must prefer external AAA before local"
+    severity: high
+    cis:
+      - {benchmark: "Nokia SR Linux Hardening", control: "2.1.2", level: 1}
+    probe:
+      type: required_regex
+      # SR Linux: authentication sequence lists external servers first
+      pattern: '("sequence"|set / system aaa authentication sequence)'
+    remediation: "Configure authentication sequence with radius/tacacs before local."
+
+  - id: SRL-SNMP-002
+    generic_id: SNMP-002
+    title: "SNMP v1/v2c must not be configured"
+    severity: critical
+    cis:
+      - {benchmark: "Nokia SR Linux Hardening", control: "5.1.2", level: 1}
+    probe:
+      type: forbidden_regex
+      pattern: '("version"\s*:\s*"(v1|v2c)"|set / system snmp.*v2c)'
+    remediation: "Remove all SNMPv1/v2c configuration. Use SNMPv3 with authPriv only."
+
+  - id: SRL-LOG-002
+    generic_id: LOG-002
+    title: "Security and authentication events must be logged"
+    severity: high
+    cis:
+      - {benchmark: "Nokia SR Linux Hardening", control: "3.2.1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '("subsystem"\s*:\s*"(security|aaa)"|set / system logging subsystem (security|aaa))'
+    remediation: "Configure: set / system logging remote-server <ip> subsystem security"
+
+  - id: SRL-TIME-002
+    generic_id: TIME-002
+    title: "NTP authentication must be configured"
+    severity: high
+    cis:
+      - {benchmark: "Nokia SR Linux Hardening", control: "4.1.2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '("authentication-key"|set / system ntp authentication-key)'
+    remediation: "Configure NTP authentication under /system/ntp/authentication-key."
+
+  - id: SRL-POLICY-002
+    generic_id: POLICY-002
+    title: "CPM filter must be configured to protect control plane"
+    severity: high
+    cis:
+      - {benchmark: "Nokia SR Linux Hardening", control: "6.2.1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '("cpm-filter"|set / system security cpm-filter)'
+    remediation: "Configure CPM filters under /system/security/cpm-filter to rate-limit control plane traffic."

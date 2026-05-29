@@ -184,3 +184,214 @@ checks:
       type: forbidden_regex
       pattern: '(?m)^\s*access-list\s+\S+\s+permit\s+icmp\s+any\s+any'
     remediation: "Restrict ICMP to required types and source/destination pairs."
+
+  # ── Additional CIS ASA L1 controls ───────────────────────────────────────
+
+  - id: ASA-MGMT-007
+    generic_id: MGMT-007
+    title: "SSH timeout must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco ASA 9", control: "1.1.5", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*ssh\s+timeout\s+[0-9]+'
+    remediation: "Configure: ssh timeout 60"
+
+  - id: ASA-MGMT-008
+    generic_id: MGMT-008
+    title: "SSH maximum authentication retries must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco ASA 9", control: "1.1.6", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*ssh\s+key-exchange\s+group|^\s*ssh\s+cipher\s+encryption|^\s*ssh\s+authentication-retries\s+[1-5]\b'
+    remediation: "Configure: ssh authentication-retries 3"
+
+  - id: ASA-MGMT-009
+    generic_id: MGMT-009
+    title: "Login banner must be configured"
+    severity: low
+    cis:
+      - {benchmark: "CIS Cisco ASA 9", control: "1.3.2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*banner\s+(login|motd|asdm)\s+'
+    remediation: "Configure: banner login <legal notice>"
+
+  - id: ASA-AAA-003
+    generic_id: AAA-003
+    title: "AAA authorization must be configured for EXEC and commands"
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco ASA 9", control: "2.1.3", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*aaa\s+authorization\s+(exec|command)\s+'
+    remediation: "Configure: aaa authorization exec authentication-server"
+
+  - id: ASA-AAA-004
+    generic_id: AAA-004
+    title: "TACACS+ or RADIUS server group must be configured"
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco ASA 9", control: "2.1.4", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*aaa-server\s+\S+\s+(protocol\s+(tacacs\+?|radius)|tacacs\+?|radius)'
+    remediation: "Configure: aaa-server TACACS+ protocol tacacs+"
+
+  - id: ASA-AUTH-002
+    generic_id: AUTH-002
+    title: "Enable secret must be configured"
+    severity: critical
+    cis:
+      - {benchmark: "CIS Cisco ASA 9", control: "2.2.1b", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*enable\s+(password|secret)\s+'
+    remediation: "Configure: enable password <strong-value>"
+
+  - id: ASA-AUTH-003
+    generic_id: AUTH-003
+    title: "Password minimum length should be enforced"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco ASA 9", control: "2.2.2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*password-policy\s+minimum-length\s+([89]|[1-9][0-9]+)'
+    remediation: "Configure: password-policy minimum-length 8"
+
+  - id: ASA-AUTH-004
+    generic_id: AUTH-004
+    title: "Service password-encryption must be enabled"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco ASA 9", control: "2.2.3", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*service\s+password-encryption'
+    remediation: "Configure: service password-encryption"
+
+  - id: ASA-SNMP-003
+    generic_id: SNMP-003
+    title: "SNMPv3 group must be configured"
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco ASA 9", control: "3.1.3", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*snmp-server\s+group\s+\S+\s+v3\s+(auth|priv)'
+    remediation: "Configure: snmp-server group SNMPV3 v3 priv"
+
+  - id: ASA-SNMP-004
+    generic_id: SNMP-004
+    title: "SNMP trap must be sent to a management host"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco ASA 9", control: "3.1.4", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*snmp-server\s+enable\s+traps'
+    remediation: "Configure: snmp-server enable traps; snmp-server host <iface> <ip>"
+
+  - id: ASA-LOG-003
+    generic_id: LOG-003
+    title: "Logging trap severity must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco ASA 9", control: "4.1.3", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*logging\s+trap\s+(informational|notifications|warnings|errors|critical)'
+    remediation: "Configure: logging trap warnings"
+
+  - id: ASA-LOG-004
+    generic_id: LOG-004
+    title: "Log timestamps must be configured"
+    severity: low
+    cis:
+      - {benchmark: "CIS Cisco ASA 9", control: "4.1.4", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*logging\s+timestamp'
+    remediation: "Configure: logging timestamp"
+
+  - id: ASA-TIME-002
+    generic_id: TIME-002
+    title: "NTP authentication must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco ASA 9", control: "5.1.2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*ntp\s+authenticate'
+    remediation: "Configure: ntp authenticate; ntp authentication-key <id> md5 <key>; ntp trusted-key <id>"
+
+  - id: ASA-TIME-003
+    generic_id: TIME-003
+    title: "NTP trusted-key must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco ASA 9", control: "5.1.3", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*ntp\s+trusted-key\s+[0-9]+'
+    remediation: "Configure: ntp trusted-key <key-id>"
+
+  - id: ASA-POLICY-003
+    generic_id: POLICY-003
+    title: "Failover link encryption must be configured if HA is deployed"
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco ASA 9", control: "6.2.1", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: "HA may not be deployed; if failover is present, the failover key must be verified. Cannot determine HA deployment without topology knowledge."
+    remediation: "If failover is configured: failover key <key> (encrypts failover link communication)."
+
+  - id: ASA-POLICY-004
+    generic_id: POLICY-004
+    title: "ACL deny entries must include logging"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco ASA 9", control: "6.1.3", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: "Requires per-ACE validation of the 'log' keyword on deny entries. Cannot be expressed without scoped_regex engine support."
+    remediation: "Append 'log' to all deny ACE entries in access-lists."
+
+  - id: ASA-MGMT-010
+    generic_id: MGMT-010
+    title: "Login block-for brute-force protection must be configured"
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco ASA 9", control: "1.2.2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*login\s+block-for\s+[0-9]+'
+    remediation: "Configure: login block-for 300 attempts 5 within 120"
+
+  - id: ASA-LOG-005
+    generic_id: LOG-005
+    title: "Logging source-interface must be configured"
+    severity: low
+    cis:
+      - {benchmark: "CIS Cisco ASA 9", control: "4.1.5", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*logging\s+device-id\s+|^\s*logging\s+source-interface\s+'
+    remediation: "Configure: logging device-id hostname"
+
+  - id: ASA-TIME-004
+    generic_id: TIME-004
+    title: "NTP access-group or restrict must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco ASA 9", control: "5.1.4", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*ntp\s+(access-group|restrict)\s+'
+    remediation: "Configure: ntp access-group peer <acl> to restrict NTP access to trusted servers."

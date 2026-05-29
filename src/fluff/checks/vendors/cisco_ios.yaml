@@ -382,3 +382,187 @@ checks:
       type: forbidden_regex
       pattern: '(?m)^\s*permit\s+ip\s+any\s+any'
     remediation: "Replace 'permit ip any any' with least-privilege ACL entries."
+
+  # ── Additional CIS L1 controls ────────────────────────────────────────────
+
+  - id: IOS-SVC-008
+    generic_id: SVC-008
+    title: "IP directed-broadcast must be disabled"
+    description: "IP directed-broadcasts enable Smurf amplification attacks from external sources."
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "2.1.8", level: 1}
+    probe:
+      type: forbidden_regex
+      # In IOS 12.0+ directed-broadcast is off by default. Flag explicit re-enablement.
+      pattern: '(?m)^\s*ip\s+directed-broadcast\b'
+    remediation: "Remove 'ip directed-broadcast' from all interface configurations."
+
+  - id: IOS-SVC-009
+    generic_id: SVC-009
+    title: "MOP service must be disabled"
+    description: "MOP (Maintenance Operations Protocol) is a legacy DEC protocol rarely used and should not be exposed."
+    severity: low
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "2.1.10", level: 1}
+    probe:
+      type: forbidden_regex
+      # IOS 15.x+: mop enabled is default OFF on most interfaces; flag explicit enablement
+      pattern: '(?m)^\s*mop\s+enabled\b'
+    remediation: "Add 'no mop enabled' to all interfaces or leave unconfigured (off by default in IOS 15+)."
+
+  - id: IOS-SVC-010
+    generic_id: SVC-010
+    title: "LLDP must be disabled"
+    description: "LLDP advertises interface capabilities and system information to directly connected devices."
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "2.1.11", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*no\s+lldp\s+run'
+    remediation: "Configure: no lldp run"
+
+  - id: IOS-AAA-004
+    generic_id: AAA-004
+    title: "AAA authorization must be configured for EXEC sessions"
+    description: "Without AAA authorization, authenticated users may access EXEC mode without privilege enforcement."
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "1.1.4", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*aaa\s+authorization\s+exec\s+\S+'
+    remediation: "Configure: aaa authorization exec default group radius local"
+
+  - id: IOS-AAA-005
+    generic_id: AAA-005
+    title: "Login block-for brute-force protection must be configured"
+    description: "login block-for delays or blocks login after repeated failures, mitigating online brute-force attacks."
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "1.3.1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*login\s+block-for\s+[0-9]+'
+    remediation: "Configure: login block-for 300 attempts 5 within 120"
+
+  - id: IOS-MGMT-009
+    generic_id: MGMT-009
+    title: "SSH timeout must be configured"
+    description: "Without a timeout, incomplete SSH handshakes consume connection slots indefinitely."
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "3.1.5", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*ip\s+ssh\s+time-out\s+[0-9]+'
+    remediation: "Configure: ip ssh time-out 60"
+
+  - id: IOS-MGMT-010
+    generic_id: MGMT-010
+    title: "SSH maximum authentication retries must be configured"
+    description: "Limiting SSH auth retries reduces the number of guesses per connection."
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "3.1.6", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*ip\s+ssh\s+authentication-retries\s+[1-5]\b'
+    remediation: "Configure: ip ssh authentication-retries 3"
+
+  - id: IOS-MGMT-011
+    generic_id: MGMT-011
+    title: "IP domain name must be configured"
+    description: "A domain name is required for IOS to generate RSA SSH host keys. Without it, SSH may not function."
+    severity: low
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "3.1.8", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*ip\s+domain[\s-]name\s+\S+'
+    remediation: "Configure: ip domain-name <your.domain.example>"
+
+  - id: IOS-SNMP-003
+    generic_id: SNMP-003
+    title: "SNMPv3 group must be configured with auth and priv"
+    description: "SNMPv3 without auth+priv provides no meaningful security improvement over v2c."
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "4.1.3", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*snmp-server\s+group\s+\S+\s+v3\s+priv\b'
+    remediation: "Configure: snmp-server group SNMPV3GROUP v3 priv"
+
+  - id: IOS-SNMP-004
+    generic_id: SNMP-004
+    title: "SNMP traps must be sent to a management server"
+    description: "Without configured trap targets, critical hardware and security events are silently discarded."
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "4.1.4", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*snmp-server\s+host\s+'
+    remediation: "Configure: snmp-server host <syslog-ip> version 3 priv <user>"
+
+  - id: IOS-SNMP-005
+    generic_id: SNMP-005
+    title: "SNMP write access must not be enabled without explicit restriction"
+    description: "Unrestricted SNMP write access allows an attacker to modify device configuration via SNMP."
+    severity: critical
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "4.1.5", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: "SNMP RW communities may be legitimate when constrained to a management subnet. Automated detection cannot determine intent without evaluating the accompanying ACL."
+    remediation: "If SNMP write is needed, ensure the RW community is restricted to a management-only ACL: snmp-server community X RW <mgmt-acl>."
+
+  - id: IOS-LOG-004
+    generic_id: LOG-004
+    title: "Logging trap severity must be set"
+    description: "Setting a severity level ensures only meaningful events are forwarded to the syslog server."
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "5.1.4", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*logging\s+trap\s+(informational|notifications|warnings|errors|critical|alerts|emergencies)'
+    remediation: "Configure: logging trap warnings (or informational for higher verbosity)"
+
+  - id: IOS-LOG-005
+    generic_id: LOG-005
+    title: "Logging source-interface must be configured"
+    description: "Without a source-interface, syslog messages may originate from an unpredictable address, complicating log correlation."
+    severity: low
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "5.1.5", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*logging\s+source-interface\s+'
+    remediation: "Configure: logging source-interface Loopback0"
+
+  - id: IOS-TIME-003
+    generic_id: TIME-003
+    title: "NTP trusted-key must be configured"
+    description: "Without trusted-key, NTP authentication keys are configured but not enforced — servers without the key are still accepted."
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "6.1.3", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*ntp\s+trusted-key\s+[0-9]+'
+    remediation: "Configure: ntp trusted-key <key-id>"
+
+  - id: IOS-POLICY-002
+    generic_id: POLICY-002
+    title: "ACL deny entries must include logging keyword"
+    description: "ACL logging on deny entries provides visibility into blocked traffic for security monitoring."
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco IOS 17", control: "7.1.2", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: "Requires checking every 'deny' ACE for the 'log' keyword. Per-entry validation cannot be expressed as a reliable global regex without scoped_regex engine support."
+    remediation: "Append 'log' to all deny ACE entries: deny ip any any log"

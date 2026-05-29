@@ -221,6 +221,77 @@ PROFILE_SIGNALS: dict[str, list[_Signal]] = {
         # Negative: exclude SR Linux flat CLI (uses "set /" not "/configure")
         (r"(?m)^set / (interface|network-instance)\b", -5.0, "SR Linux set / (not SR OS)"),
     ],
+    # ---------------------------------------------------------- Cisco IOS-XE
+    # IOS-XE shares most IOS fingerprints but has exclusive markers.
+    # Detection intentionally overlaps cisco_ios; explicit --profile flag
+    # should be used when both could match.
+    "cisco_xe": [
+        (r"(?m)^(Current configuration|Building configuration)", 2.0, "IOS/XE config header"),
+        (r"(?m)^version \d+\.\d+(?![A-Z]\d)", 1.5, "IOS-XE version line"),
+        (r"(?m)^platform (type|hardware) ", 3.0, "IOS-XE platform type"),
+        (r"(?m)^license (boot|smart|feature|udi) ", 3.0, "IOS-XE license command"),
+        (r"(?m)^boot-start-marker\b", 3.0, "IOS-XE boot-start-marker"),
+        (r"(?m)^interface (TenGigabitEthernet|TwentyFiveGigE|FortyGigabitEthernet|HundredGigE)\d", 4.0, "IOS-XE high-speed interface"),
+        (r"(?m)^interface AppGigabitEthernet\d", 5.0, "IOS-XE AppGigabitEthernet (Catalyst 9K)"),
+        (r"(?m)^switch \d+ provision\b", 4.0, "IOS-XE switch provision (Catalyst stack)"),
+        (r"(?m)^network-clock\b", 2.0, "IOS-XE network-clock"),
+        (r"(?m)^(no )?ip forward-protocol nd\b", 2.0, "IOS-XE ip forward-protocol nd"),
+        (r"(?m)^crypto pki trustpoint\b", 2.0, "IOS-XE PKI trustpoint"),
+        (r"(?m)^!RANCID-CONTENT-TYPE: cisco\b", 2.0, "RANCID cisco tag"),
+        (r"(?m)^ip tcp synwait-time\b", 1.5, "IOS-XE tcp synwait-time"),
+        (r"(?m)^ASA Version", -10.0, "ASA Version header (not XE)"),
+        (r"(?m)^(feature|vpc domain)\b", -5.0, "NX-OS feature (not XE)"),
+        (r"(?m)^Cisco Nexus", -10.0, "NX-OS Nexus header (not XE)"),
+    ],
+    # ---------------------------------------------------------- Cisco IOS-XR
+    "cisco_xr": [
+        (r"(?m)^!! IOS XR", 5.0, "IOS-XR config header"),
+        (r"(?m)^!! Last configuration change", 3.0, "IOS-XR last config comment"),
+        (r"(?m)^(router isis|router ospf|router bgp) \d+\s*$", 3.0, "IOS-XR routing protocol block"),
+        (r"(?m)^interface (GigabitEthernet|TenGigE|HundredGigE|Bundle-Ether|Loopback)\d+/\d+/\d+", 4.0, "IOS-XR XR interface naming"),
+        (r"(?m)^interface (GigabitEthernet|TenGigE)\d+/\d+/\d+/\d+", 5.0, "IOS-XR 4-part interface"),
+        (r"(?m)^(task-group|user-group|usergroup)\b", 4.0, "IOS-XR RBAC task-group"),
+        (r"(?m)^\s+task \+(read|write|execute|debug)\s+\S+", 4.0, "IOS-XR task permission"),
+        (r"(?m)^commit\b", 2.0, "IOS-XR commit keyword"),
+        (r"(?m)^(no )?nsr\b", 2.0, "IOS-XR NSR (Non-Stop Routing)"),
+        (r"(?m)^(no )?telnet (ipv4|ipv6) server disable\b", 3.0, "IOS-XR telnet server"),
+        (r"(?m)^ssh server\b", 2.0, "IOS-XR ssh server"),
+        (r"(?m)^line default\b", 2.0, "IOS-XR line default block"),
+        (r"(?m)^vrf \S+\s*$", 1.5, "IOS-XR VRF definition"),
+        (r"(?m)^ASA Version", -10.0, "ASA Version (not XR)"),
+        (r"(?m)^feature\b", -5.0, "NX-OS feature (not XR)"),
+    ],
+    # ---------------------------------------------------------- Huawei VRP
+    "huawei_vrp": [
+        (r"(?m)^#$", 2.0, "VRP section delimiter #"),
+        (r"(?m)^sysname\s+\S+", 5.0, "VRP sysname command"),
+        (r"(?m)^\s+undo (ip source-route|telnet server enable)\b", 3.0, "VRP undo command"),
+        (r"(?m)^(aaa|hwtacacs|radius|snmp-agent|ntp-service)\b", 3.0, "VRP system service block"),
+        (r"(?m)^\s+authentication-scheme\b", 2.0, "VRP aaa authentication-scheme"),
+        (r"(?m)^\s+(local-user|domain)\s+\S+", 2.0, "VRP local-user/domain"),
+        (r"(?m)^\s+snmp-agent (sys-info|community|target-host|trap enable)", 3.0, "VRP snmp-agent commands"),
+        (r"(?m)^interface (GigabitEthernet|XGigabitEthernet|10GE|100GE|LoopBack|MEth)\d+/\d+/\d+", 4.0, "VRP interface naming"),
+        (r"(?m)^\s+(user-interface|interface)\s+(console|vty)\s+\d", 3.0, "VRP user-interface block"),
+        (r"(?m)^\s+set authentication password (cipher|irreversible-cipher)", 3.0, "VRP cipher password"),
+        (r"(?m)^\s+header (login|shell)\s+", 2.0, "VRP login banner"),
+        (r"(?m)^\s+ntp-service (unicast-server|reliable|authentication)", 2.0, "VRP ntp-service"),
+        (r"(?m)^Huawei Technologies\b", 4.0, "Huawei copyright header"),
+        (r"(?m)^version\s+\S+\s+Release\b", 3.0, "VRP version Release string"),
+    ],
+    # ---------------------------------------------------------------- F5 BIG-IP
+    "f5_bigip": [
+        (r"(?m)^#TMSH-VERSION:\s+\d+\.\d+", 5.0, "BIG-IP TMSH version header"),
+        (r"(?m)^sys global-settings\s*\{", 5.0, "BIG-IP sys global-settings block"),
+        (r"(?m)^ltm (virtual|pool|node|profile|rule|snatpool|monitor)\s+\S+\s*\{", 4.0, "BIG-IP LTM object"),
+        (r"(?m)^net (self|vlan|interface|route|tunnels)\s+", 3.0, "BIG-IP net object"),
+        (r"(?m)^auth (partition|user|password-policy|source)\s+", 3.0, "BIG-IP auth block"),
+        (r"(?m)^sys management-(ip|route|syslog|ntp|dns)\s+", 3.0, "BIG-IP sys management block"),
+        (r"(?m)^\s+destination \d+\.\d+\.\d+\.\d+:\d+\b", 2.0, "BIG-IP destination IP:port"),
+        (r"(?m)^\s+(profiles|policies|rules)\s*\{", 2.0, "BIG-IP profiles/policies/rules nested block"),
+        (r"(?m)^security (firewall|dos|shared-objects)\s+", 3.0, "BIG-IP security block"),
+        (r"(?m)^cm (device|trust-domain|failover-device)\s+", 3.0, "BIG-IP cm (cluster) block"),
+        (r"(?m)^\s+enabled\s*$|\s+disabled\s*$", 1.0, "BIG-IP enabled/disabled"),
+    ],
     # ------------------------------------------------------------ Nokia SR Linux
     "nokia_srl": [
         # JSON config export format

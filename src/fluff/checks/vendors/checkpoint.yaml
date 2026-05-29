@@ -126,3 +126,82 @@ checks:
     probe:
       type: manual
     remediation: "Ensure the last security rule is: Source=Any, Dest=Any, Action=Drop, Track=Log."
+
+  # ── Additional CIS Check Point L1 controls ────────────────────────────────
+
+  - id: CP-AUTH-003
+    generic_id: AUTH-003
+    title: "Password minimum length must be configured"
+    severity: high
+    cis:
+      - {benchmark: "CIS Check Point", control: "2.2.3", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*set\s+password-controls\s+min-password-length\s+([89]|[1-9][0-9]+)'
+    remediation: "Gaia CLISH: set password-controls min-password-length 8"
+
+  - id: CP-AUTH-004
+    generic_id: AUTH-004
+    title: "Password complexity must be enforced"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Check Point", control: "2.2.4", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*set\s+password-controls\s+complexity\s+[1-9]'
+    remediation: "Gaia CLISH: set password-controls complexity 2"
+
+  - id: CP-AUTH-005
+    generic_id: AUTH-005
+    title: "Failed login lockout must be configured"
+    severity: high
+    cis:
+      - {benchmark: "CIS Check Point", control: "2.2.5", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*set\s+password-controls\s+block-user\s+after\s+[1-9]'
+    remediation: "Gaia CLISH: set password-controls block-user after 5"
+
+  - id: CP-SNMP-002
+    generic_id: SNMP-002
+    title: "SNMPv3 must be configured"
+    severity: high
+    cis:
+      - {benchmark: "CIS Check Point", control: "3.1.2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*set\s+snmp\s+usm\s+user\s+'
+    remediation: "Gaia CLISH: set snmp usm user <user> security-level authPriv"
+
+  - id: CP-LOG-002
+    generic_id: LOG-002
+    title: "Syslog must be enabled and configured"
+    severity: high
+    cis:
+      - {benchmark: "CIS Check Point", control: "4.1.2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*(set\s+syslog\s+(enable|server)|add\s+syslog\s+server)\s+'
+    remediation: "Gaia CLISH: add syslog server address <ip>; set syslog enable"
+
+  - id: CP-TIME-002
+    generic_id: TIME-002
+    title: "NTP authentication must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Check Point", control: "5.1.2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*set\s+ntp\s+server\s+\S+\s+key'
+    remediation: "Gaia CLISH: set ntp server <ip> keytype MD5 key <key>"
+
+  - id: CP-MGMT-004
+    generic_id: MGMT-004
+    title: "Login banner must be configured"
+    severity: low
+    cis:
+      - {benchmark: "CIS Check Point", control: "1.3.1", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*set\s+(motd|login-message)\s+'
+    remediation: "Gaia CLISH: set motd \"<legal notice>\""

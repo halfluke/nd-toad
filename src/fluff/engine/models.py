@@ -10,6 +10,7 @@ class Status(str, Enum):
     PASS = "pass"
     FAIL = "fail"
     MANUAL = "manual"
+    MANUAL_FP_RISK = "manual_fp_risk"
     NOT_APPLICABLE = "not_applicable"
 
 

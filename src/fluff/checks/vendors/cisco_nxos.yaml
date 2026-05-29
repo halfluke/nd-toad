@@ -169,3 +169,263 @@ checks:
     probe:
       type: manual
     remediation: "Audit: show feature | grep enabled — disable any feature not required."
+
+  # ── Additional CIS NX-OS L1 controls ─────────────────────────────────────
+
+  - id: NXOS-MGMT-006
+    generic_id: MGMT-006
+    title: "VTY lines must restrict access via access-class"
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco NX-OS", control: "1.2.2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*access-class\s+\S+\s+in'
+      scope: "^line vty"
+    remediation: "Under 'line vty': access-class <mgmt-acl> in"
+
+  - id: NXOS-MGMT-007
+    generic_id: MGMT-007
+    title: "Console exec-timeout must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco NX-OS", control: "1.2.3", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*exec-timeout\s+[1-9]'
+      scope: "^line con"
+    remediation: "Under 'line console': exec-timeout 10 0"
+
+  - id: NXOS-MGMT-008
+    generic_id: MGMT-008
+    title: "VTY transport input must be restricted to SSH"
+    severity: critical
+    cis:
+      - {benchmark: "CIS Cisco NX-OS", control: "1.2.4", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*transport\s+input\s+ssh\s*$'
+      scope: "^line vty"
+    remediation: "Under 'line vty': transport input ssh"
+
+  - id: NXOS-MGMT-009
+    generic_id: MGMT-009
+    title: "NXAPI must use HTTPS only when enabled"
+    description: "NXAPI over plain HTTP transmits credentials and configuration in cleartext."
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco NX-OS", control: "1.1.4", level: 1}
+    probe:
+      type: forbidden_regex
+      pattern: '(?m)^\s*nxapi\s+http\s+port\s+'
+    remediation: "Remove 'nxapi http port' configuration. Use 'nxapi https port 443' only."
+
+  - id: NXOS-AAA-002
+    generic_id: AAA-002
+    title: "AAA authorization must be configured for EXEC"
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco NX-OS", control: "2.1.2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*aaa\s+authorization\s+(commands|exec)\s+'
+    remediation: "Configure: aaa authorization commands default group tacacs+ local"
+
+  - id: NXOS-AAA-003
+    generic_id: AAA-003
+    title: "TACACS+ server must be configured"
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco NX-OS", control: "2.1.3", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*tacacs-server\s+(host|address)\s+'
+    remediation: "Configure: tacacs-server host <ip> key <key>"
+
+  - id: NXOS-AAA-004
+    generic_id: AAA-004
+    title: "AAA accounting must be configured"
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco NX-OS", control: "2.1.4", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*aaa\s+accounting\s+(exec|commands)\s+'
+    remediation: "Configure: aaa accounting exec default start-stop group tacacs+"
+
+  - id: NXOS-AUTH-003
+    generic_id: AUTH-003
+    title: "No cleartext type-0 passwords must be configured"
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco NX-OS", control: "2.2.3", level: 1}
+    probe:
+      type: forbidden_regex
+      pattern: '(?m)^\s*username\s+\S+\s+password\s+0\s+'
+    remediation: "Remove all type-0 passwords. Use typed-5 (md5) or typed-8/9 hashing."
+
+  - id: NXOS-AUTH-004
+    generic_id: AUTH-004
+    title: "Role-based access control must be configured"
+    description: "NX-OS RBAC assigns least-privilege roles to user accounts."
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco NX-OS", control: "2.2.4", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*username\s+\S+\s+role\s+\S+'
+    remediation: "Assign roles to all user accounts: username <user> role network-operator"
+
+  - id: NXOS-SNMP-003
+    generic_id: SNMP-003
+    title: "SNMPv3 must use authentication and privacy"
+    severity: high
+    cis:
+      - {benchmark: "CIS Cisco NX-OS", control: "3.1.3", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*snmp-server\s+user\s+\S+\s+\S+\s+(auth|v3)\s+(sha|md5)\s+'
+    remediation: "Configure: snmp-server user <user> <group> v3 auth sha <auth-key> priv aes-128 <priv-key>"
+
+  - id: NXOS-SNMP-004
+    generic_id: SNMP-004
+    title: "SNMP host must be configured for traps"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco NX-OS", control: "3.1.4", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*snmp-server\s+host\s+'
+    remediation: "Configure: snmp-server host <ip> version 3 <user>"
+
+  - id: NXOS-LOG-003
+    generic_id: LOG-003
+    title: "Logging severity level must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco NX-OS", control: "4.1.3", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*logging\s+level\s+\S+\s+[3-6]\b'
+    remediation: "Configure: logging level <facility> 4 (warnings or higher)"
+
+  - id: NXOS-LOG-004
+    generic_id: LOG-004
+    title: "Logging source-interface must be configured"
+    severity: low
+    cis:
+      - {benchmark: "CIS Cisco NX-OS", control: "4.1.4", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*logging\s+source-interface\s+'
+    remediation: "Configure: logging source-interface loopback0"
+
+  - id: NXOS-TIME-002
+    generic_id: TIME-002
+    title: "NTP authentication must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco NX-OS", control: "5.1.2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*ntp\s+authentication-key\s+'
+    remediation: "Configure: ntp authentication-key <id> md5 <key>; ntp authenticate; ntp trusted-key <id>"
+
+  - id: NXOS-TIME-003
+    generic_id: TIME-003
+    title: "NTP trusted-key must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco NX-OS", control: "5.1.3", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*ntp\s+trusted-key\s+'
+    remediation: "Configure: ntp trusted-key <key-id>"
+
+  - id: NXOS-SVC-002
+    generic_id: SVC-002
+    title: "CDP should be disabled globally"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco NX-OS", control: "7.1.2", level: 1}
+    probe:
+      type: forbidden_regex
+      pattern: '(?m)^\s*cdp\s+enable\b'
+    remediation: "Remove 'cdp enable' globally. NX-OS disables CDP by default."
+
+  - id: NXOS-POLICY-002
+    generic_id: POLICY-002
+    title: "ICMP must be restricted (no blanket permit icmp any any)"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco NX-OS", control: "6.1.2", level: 1}
+    probe:
+      type: forbidden_regex
+      pattern: '(?m)^\s*permit\s+icmp\s+any\s+any\b'
+    remediation: "Restrict ICMP to required types and source/destination pairs."
+
+  - id: NXOS-POLICY-003
+    generic_id: POLICY-003
+    title: "ACL deny entries must include logging"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco NX-OS", control: "6.1.3", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: "Requires per-ACE inspection; cannot be expressed without scoped_regex engine support."
+    remediation: "Append 'log' keyword to all deny ACE entries."
+
+  - id: NXOS-AUTH-005
+    generic_id: AUTH-005
+    title: "Password aging must be enforced"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco NX-OS", control: "2.2.5", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)(^\s*password\s+expire\s+|^\s*aaa\s+user\s+default-role)'
+    remediation: "Configure password expiry: configure terminal; username admin password-expiry-interval 90"
+
+  - id: NXOS-SVC-003
+    generic_id: SVC-003
+    title: "LLDP must be disabled"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco NX-OS", control: "7.1.3", level: 1}
+    probe:
+      type: forbidden_regex
+      pattern: '(?m)^\s*feature\s+lldp'
+    remediation: "Remove 'feature lldp' from the configuration."
+
+  - id: NXOS-LOG-005
+    generic_id: LOG-005
+    title: "Logging to local buffer must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco NX-OS", control: "4.1.5", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*logging\s+logfile\s+'
+    remediation: "Configure: logging logfile messages 5 size 4096000"
+
+  - id: NXOS-TIME-004
+    generic_id: TIME-004
+    title: "NTP authentication keys must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Cisco NX-OS", control: "5.1.4", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)^\s*ntp\s+authenticate'
+    remediation: "Configure: ntp authenticate; ntp authentication-key <id> md5 <key>"
+
+  - id: NXOS-SNMP-005
+    generic_id: SNMP-005
+    title: "SNMP write communities must not be configured without ACL"
+    severity: critical
+    cis:
+      - {benchmark: "CIS Cisco NX-OS", control: "3.1.5", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: "SNMP RW community legitimacy depends on accompanying ACL restriction. Cannot be validated without evaluating the ACL."
+    remediation: "If SNMP RW is needed: snmp-server community <string> rw <acl-number>"

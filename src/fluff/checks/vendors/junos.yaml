@@ -202,3 +202,542 @@ checks:
       # The check flags 'then accept' — reviewers must verify match conditions exist
       pattern: '(?m)(^\s*set\s+firewall\s+family\s+\S+\s+filter\s+\S+\s+term\s+\S+\s+then\s+accept|^\s+then\s+\{\s*\n\s+accept\s*;\s*\n\s+\})'
     remediation: "Review each filter term — ensure 'then accept' is preceded by specific match conditions, not a bare catch-all."
+
+  # ── Additional CIS Juniper JunOS L1 controls ──────────────────────────────
+  # All patterns support both set format and curly-brace format
+
+  - id: JUNOS-MGMT-007
+    generic_id: MGMT-007
+    title: "SSH must restrict client connections to authorized sources"
+    severity: high
+    cis:
+      - {benchmark: "CIS Juniper JunOS", control: "1.1.5", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)(set\s+system\s+services\s+ssh\s+root-login\s+deny|^\s+root-login\s+deny\s*;)'
+    remediation: "Configure: set system services ssh root-login deny"
+
+  - id: JUNOS-MGMT-008
+    generic_id: MGMT-008
+    title: "FTP access must be disabled"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Juniper JunOS", control: "1.1.6", level: 1}
+    probe:
+      type: forbidden_regex
+      pattern: '(?m)(set\s+system\s+services\s+ftp|^\s+ftp\s*[\{;]\s*$)'
+    remediation: "Remove: set system services ftp"
+
+  - id: JUNOS-MGMT-009
+    generic_id: MGMT-009
+    title: "NETCONF must use SSH and not cleartext"
+    severity: high
+    cis:
+      - {benchmark: "CIS Juniper JunOS", control: "1.1.7", level: 1}
+    probe:
+      type: forbidden_regex
+      # Flag NETCONF over cleartext port 830 without SSH requirement
+      pattern: '(?m)(set\s+system\s+services\s+netconf\s+session\s+idletimeout|netconf\s*\{\s*\n[^}]*http)'
+    remediation: "Configure: set system services netconf ssh (not clear-text). Disable if not needed."
+
+  - id: JUNOS-MGMT-010
+    generic_id: MGMT-010
+    title: "J-Web must use HTTPS only"
+    severity: high
+    cis:
+      - {benchmark: "CIS Juniper JunOS", control: "1.1.8", level: 1}
+    probe:
+      type: forbidden_regex
+      # Flag J-Web configured without HTTPS (http management interface)
+      pattern: '(?m)(set\s+system\s+services\s+web-management\s+http|^\s+http\s*[\{;]\s*$)'
+      scope: "(?m)web-management"
+    remediation: "Remove J-Web HTTP: set system services web-management https. Disable J-Web if not needed."
+
+  - id: JUNOS-MGMT-011
+    generic_id: MGMT-011
+    title: "Management traffic must use dedicated routing-instance"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Juniper JunOS", control: "1.2.2", level: 1}
+    probe:
+      type: required_regex
+      # Management routing-instance isolates OOB traffic
+      pattern: '(?m)(set\s+system\s+services\s+ssh\s+routing-instance|routing-instances\s+mgmt_junos)'
+    remediation: "Configure: set system services ssh routing-instance mgmt_junos (or equivalent management VRF)."
+
+  - id: JUNOS-AAA-002
+    generic_id: AAA-002
+    title: "Authentication order must prefer external AAA before local password"
+    severity: high
+    cis:
+      - {benchmark: "CIS Juniper JunOS", control: "2.1.2", level: 1}
+    probe:
+      type: required_regex
+      # set format: authentication-order [radius tacplus password]
+      # curly format: authentication-order [radius tacplus password];
+      pattern: '(?m)(set\s+system\s+authentication-order\s+\[?\s*(radius|tacplus)|^\s+authentication-order\s+\[?\s*(radius|tacplus))'
+    remediation: "Configure: set system authentication-order [radius tacplus password]"
+
+  - id: JUNOS-AAA-003
+    generic_id: AAA-003
+    title: "TACACS+ accounting must be configured"
+    severity: high
+    cis:
+      - {benchmark: "CIS Juniper JunOS", control: "2.1.3", level: 1}
+    probe:
+      type: required_regex
+      # set format: set system accounting destination tacplus
+      # curly format: accounting { destination { tacplus; } }
+      pattern: '(?m)(set\s+system\s+accounting\s+destination\s+tacplus|accounting\s*\{[^}]*destination[^}]*tacplus)'
+    remediation: "Configure: set system accounting destination tacplus; set system accounting events [login interactive-commands]"
+
+  - id: JUNOS-AAA-004
+    generic_id: AAA-004
+    title: "Password minimum length must be configured"
+    severity: high
+    cis:
+      - {benchmark: "CIS Juniper JunOS", control: "2.2.3", level: 1}
+    probe:
+      type: required_regex
+      # set format: set system login password minimum-length 14
+      # curly format: minimum-length 14; inside password { login { system {
+      pattern: '(?m)(set\s+system\s+login\s+password\s+minimum-length\s+([89]|[1-9][0-9]+)|^\s+minimum-length\s+([89]|[1-9][0-9]+)\s*;)'
+    remediation: "Configure: set system login password minimum-length 14"
+
+  - id: JUNOS-AAA-005
+    generic_id: AAA-005
+    title: "Login retry-options must be configured"
+    severity: high
+    cis:
+      - {benchmark: "CIS Juniper JunOS", control: "2.2.4", level: 1}
+    probe:
+      type: required_regex
+      # set format: set system login retry-options tries-before-disconnect 3
+      # curly format: retry-options { tries-before-disconnect 3; } inside login {
+      pattern: '(?m)(set\s+system\s+login\s+retry-options\s+tries-before-disconnect|^\s+retry-options\s*\{)'
+    remediation: "Configure: set system login retry-options tries-before-disconnect 3 backoff-threshold 2 backoff-factor 5 lockout-period 0"
+
+  - id: JUNOS-AUTH-003
+    generic_id: AUTH-003
+    title: "Local user accounts must have a defined login class"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Juniper JunOS", control: "2.3.1", level: 1}
+    probe:
+      type: required_regex
+      # set format: set system login user X class <class>
+      pattern: '(?m)(set\s+system\s+login\s+user\s+\S+\s+class\s+\S+|^\s+class\s+\S+\s*;)'
+    remediation: "Ensure all users have a login class: set system login user X class operator (not superuser unless required)"
+
+  - id: JUNOS-AUTH-004
+    generic_id: AUTH-004
+    title: "SSH host keys must be configured"
+    severity: high
+    cis:
+      - {benchmark: "CIS Juniper JunOS", control: "2.3.2", level: 1}
+    probe:
+      type: required_regex
+      # JunOS stores SSH host key under system/services/ssh
+      pattern: '(?m)(set\s+system\s+services\s+ssh\s+(host-key-algorithm|generate-host-keys)|host-key-algorithm\s)'
+    remediation: "Configure: set system services ssh generate-host-keys"
+
+  - id: JUNOS-SNMP-003
+    generic_id: SNMP-003
+    title: "SNMPv3 must be configured with authentication and privacy"
+    severity: high
+    cis:
+      - {benchmark: "CIS Juniper JunOS", control: "3.1.3", level: 1}
+    probe:
+      type: required_regex
+      # set format: set snmp v3 usm local-engine user X authentication-sha
+      # curly format: v3 { usm { local-engine { user X { authentication-sha; } } } }
+      pattern: '(?m)(set\s+snmp\s+v3\s+usm|v3\s*\{\s*\n\s+usm\s*\{)'
+    remediation: "Configure: set snmp v3 usm local-engine user <name> authentication-sha authentication-password <key> privacy-aes128 privacy-password <key>"
+
+  - id: JUNOS-SNMP-004
+    generic_id: SNMP-004
+    title: "SNMP trap group must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Juniper JunOS", control: "3.1.4", level: 1}
+    probe:
+      type: required_regex
+      # set format: set snmp trap-group <name> targets <ip>
+      # curly format: trap-group X { targets { X.X.X.X; } }
+      pattern: '(?m)(set\s+snmp\s+trap-group\s+\S+\s+targets\s+|trap-group\s+\S+\s*\{[^}]*targets\s*\{)'
+    remediation: "Configure: set snmp trap-group MGMT-TRAPS targets <syslog-ip>"
+
+  - id: JUNOS-SNMP-005
+    generic_id: SNMP-005
+    title: "SNMP v1/v2c must not be configured without client restriction"
+    severity: high
+    cis:
+      - {benchmark: "CIS Juniper JunOS", control: "3.1.5", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: "SNMP v1/v2c presence is not always a violation if restricted to management networks via client-list. Intent cannot be validated without evaluating the community + client-list together."
+    remediation: "Migrate all SNMP polling to v3. If v2c is needed: set snmp community X authorization read-only clients <mgmt-prefix>"
+
+  - id: JUNOS-LOG-003
+    generic_id: LOG-003
+    title: "Authorization events must be logged to syslog"
+    severity: high
+    cis:
+      - {benchmark: "CIS Juniper JunOS", control: "4.1.3", level: 1}
+    probe:
+      type: required_regex
+      # set format: set system syslog host <ip> authorization info
+      # curly format: authorization info; inside a syslog target block
+      pattern: '(?m)(set\s+system\s+syslog\s+\S+\s+authorization\s+|^\s+authorization\s+\S+\s*;)'
+    remediation: "Configure: set system syslog host <ip> authorization info"
+
+  - id: JUNOS-LOG-004
+    generic_id: LOG-004
+    title: "Configuration change events must be logged"
+    severity: high
+    cis:
+      - {benchmark: "CIS Juniper JunOS", control: "4.1.4", level: 1}
+    probe:
+      type: required_regex
+      # set format: set system syslog file <name> change-log any
+      # curly format: change-log any; inside syslog file block
+      pattern: '(?m)(set\s+system\s+syslog\s+\S+\s+change-log\s+|^\s+change-log\s+\S+\s*;)'
+    remediation: "Configure: set system syslog file changes change-log any"
+
+  - id: JUNOS-LOG-005
+    generic_id: LOG-005
+    title: "Security events must be logged"
+    severity: high
+    cis:
+      - {benchmark: "CIS Juniper JunOS", control: "4.1.5", level: 1}
+    probe:
+      type: required_regex
+      # set format: set system syslog host <ip> any notice (or higher)
+      pattern: '(?m)(set\s+system\s+syslog\s+\S+\s+any\s+(notice|info|warning|error|critical)|^\s+any\s+(notice|info|warning)\s*;)'
+    remediation: "Configure: set system syslog host <ip> any notice"
+
+  - id: JUNOS-LOG-006
+    generic_id: LOG-006
+    title: "Local log archive must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Juniper JunOS", control: "4.1.6", level: 1}
+    probe:
+      type: required_regex
+      # set format: set system syslog archive files 10 (retain log files locally)
+      pattern: '(?m)(set\s+system\s+syslog\s+archive\s+files\s+[1-9]|archive\s*\{\s*\n\s+files\s+[1-9])'
+    remediation: "Configure: set system syslog archive files 10 size 10m world-readable"
+
+  - id: JUNOS-LOG-007
+    generic_id: LOG-007
+    title: "Syslog source-address must be configured"
+    severity: low
+    cis:
+      - {benchmark: "CIS Juniper JunOS", control: "4.1.7", level: 1}
+    probe:
+      type: required_regex
+      # set format: set system syslog source-address <ip>
+      # curly format: source-address X.X.X.X; inside syslog {
+      pattern: '(?m)(set\s+system\s+syslog\s+source-address\s+|^\s+source-address\s+\d{1,3}\.\d{1,3})'
+    remediation: "Configure: set system syslog source-address <loopback-ip>"
+
+  - id: JUNOS-TIME-002
+    generic_id: TIME-002
+    title: "NTP authentication must be configured"
+    severity: high
+    cis:
+      - {benchmark: "CIS Juniper JunOS", control: "5.1.2", level: 1}
+    probe:
+      type: required_regex
+      # set format: set system ntp authentication-key 1 type md5 value <key>
+      # curly format: authentication-key 1 { type md5; value "..."; }
+      pattern: '(?m)(set\s+system\s+ntp\s+authentication-key|authentication-key\s+[0-9]+\s*\{)'
+    remediation: "Configure: set system ntp authentication-key 1 type md5 value <key>; set system ntp trusted-key 1"
+
+  - id: JUNOS-TIME-003
+    generic_id: TIME-003
+    title: "NTP trusted-key must be configured"
+    severity: high
+    cis:
+      - {benchmark: "CIS Juniper JunOS", control: "5.1.3", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)(set\s+system\s+ntp\s+trusted-key\s+|^\s+trusted-key\s+[0-9]+\s*;)'
+    remediation: "Configure: set system ntp trusted-key <key-id>"
+
+  - id: JUNOS-SVC-001
+    generic_id: SVC-001
+    title: "IP source routing must be disabled"
+    severity: high
+    cis:
+      - {benchmark: "CIS Juniper JunOS", control: "7.2.1", level: 1}
+    probe:
+      type: forbidden_regex
+      # JunOS: source routing is disabled by default. Flag if explicitly re-enabled.
+      # routing-options: no-source-route is the hardened config; absence of this could mean enabled.
+      # Actually in JunOS, source-routing is enabled by default on some versions.
+      # The set command to disable is: set system no-source-route
+      pattern: '(?m)^\s*set\s+routing-options\s+source-routing'
+    remediation: "If source-routing is enabled, remove: delete routing-options source-routing"
+
+  - id: JUNOS-SVC-002
+    generic_id: SVC-002
+    title: "LLDP must be disabled"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Juniper JunOS", control: "7.3.1", level: 1}
+    probe:
+      type: required_regex
+      # set format: 'set protocols lldp disable' (no LLDP advertisements)
+      # or absence is also acceptable; flag explicit enable as forbidden instead
+      pattern: '(?m)(set\s+protocols\s+lldp\s+disable|lldp\s*\{\s*\n\s+disable\s*;)'
+    remediation: "Configure: set protocols lldp disable"
+
+  - id: JUNOS-SVC-003
+    generic_id: SVC-003
+    title: "LLDP-MED must be disabled"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Juniper JunOS", control: "7.3.2", level: 1}
+    probe:
+      type: forbidden_regex
+      pattern: '(?m)set\s+protocols\s+lldp-med'
+    remediation: "Remove: delete protocols lldp-med"
+
+  - id: JUNOS-SVC-004
+    generic_id: SVC-004
+    title: "TCP/UDP small servers must be disabled"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Juniper JunOS", control: "7.2.2", level: 1}
+    probe:
+      type: forbidden_regex
+      # JunOS: 'no-tcp-forwarding' is separate; small-servers are under system services
+      # Flag explicit enablement of chargen, echo, discard (diagnostic servers)
+      pattern: '(?m)set\s+system\s+services\s+(chargen|echo|discard)'
+    remediation: "Remove diagnostic services: delete system services chargen; delete system services echo"
+
+  - id: JUNOS-SVC-005
+    generic_id: SVC-005
+    title: "DHCP server must not be enabled on interfaces that do not require it"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Juniper JunOS", control: "7.1.1", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: "DHCP server may be legitimate on access ports. Cannot determine which interfaces require it without topology knowledge."
+    remediation: "Review: set access address-assignment pool/group. Ensure DHCP server is not running on external-facing interfaces."
+
+  - id: JUNOS-SVC-006
+    generic_id: SVC-006
+    title: "CDP must be disabled"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Juniper JunOS", control: "7.3.3", level: 1}
+    probe:
+      type: forbidden_regex
+      # JunOS: CDP is disabled by default; flag if it's explicitly enabled
+      pattern: '(?m)set\s+protocols\s+cdp'
+    remediation: "Remove: delete protocols cdp"
+
+  - id: JUNOS-SVC-007
+    generic_id: SVC-007
+    title: "BGP must use MD5 authentication on all peers"
+    severity: critical
+    cis:
+      - {benchmark: "CIS Juniper JunOS", control: "8.1.1", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: "Requires verifying every BGP neighbor/group has authentication-key; topology-dependent."
+    remediation: "Under protocols bgp group X neighbor Y: set authentication-key <key>"
+
+  - id: JUNOS-SVC-008
+    generic_id: SVC-008
+    title: "IS-IS must use authentication on all interfaces"
+    severity: high
+    cis:
+      - {benchmark: "CIS Juniper JunOS", control: "8.1.2", level: 1}
+    probe:
+      type: required_regex
+      # set format: set protocols isis interface <iface> level 1 authentication-type md5
+      # curly format: authentication-type md5; inside IS-IS interface config
+      pattern: '(?mi)(set\s+protocols\s+isis\s+interface\s+\S+\s+level\s+[12]\s+authentication|isis.*authentication-type\s+(md5|sha))'
+    remediation: "Configure: set protocols isis interface <iface> level 1 authentication-type md5; set protocols isis interface <iface> level 1 authentication-key-chain <chain>"
+
+  - id: JUNOS-POLICY-002
+    generic_id: POLICY-002
+    title: "Firewall filter must have an explicit deny default term"
+    severity: high
+    cis:
+      - {benchmark: "CIS Juniper JunOS", control: "6.1.2", level: 1}
+    probe:
+      type: required_regex
+      # set format: a term named 'default' with then reject/discard
+      pattern: '(?m)(set\s+firewall\s+family\s+\S+\s+filter\s+\S+\s+term\s+\S+\s+then\s+(discard|reject)|then\s*\{\s*\n\s+(discard|reject)\s*;)'
+    remediation: "Add a final term to each filter: set firewall family inet filter <name> term default then discard"
+
+  - id: JUNOS-POLICY-003
+    generic_id: POLICY-003
+    title: "OSPF must use MD5 authentication"
+    severity: high
+    cis:
+      - {benchmark: "CIS Juniper JunOS", control: "8.1.3", level: 1}
+    probe:
+      type: required_regex
+      # set format: set protocols ospf area X interface Y authentication md5 ...
+      # curly format: authentication { md5 ... }
+      pattern: '(?mi)(set\s+protocols\s+ospf\s+area\s+\S+\s+interface\s+\S+\s+authentication|ospf.*authentication\s+md5)'
+    remediation: "Configure: set protocols ospf area 0.0.0.0 interface <iface> authentication md5 1 key <key>"
+
+  - id: JUNOS-POLICY-004
+    generic_id: POLICY-004
+    title: "BGP maximum-prefix limit must be configured on external peers"
+    severity: high
+    cis:
+      - {benchmark: "CIS Juniper JunOS", control: "8.2.1", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: "Maximum prefix is per-peer and requires topology knowledge to determine appropriate limit."
+    remediation: "Set: set protocols bgp group <external> neighbor X family inet unicast prefix-limit maximum <n>"
+
+  - id: JUNOS-POLICY-005
+    generic_id: POLICY-005
+    title: "Routing Engine protection filter must be configured"
+    severity: critical
+    cis:
+      - {benchmark: "CIS Juniper JunOS", control: "6.2.1", level: 1}
+    probe:
+      type: required_regex
+      # JunOS RE filter applied as: set interfaces lo0 unit 0 family inet filter input <name>
+      pattern: '(?m)(set\s+interfaces\s+lo0\s+unit\s+0\s+family\s+inet\s+filter\s+input|lo0.*filter\s+input\s+)'
+    remediation: "Apply a firewall filter to lo0 to protect the Routing Engine: set interfaces lo0 unit 0 family inet filter input <re-protect-filter>"
+
+  - id: JUNOS-POLICY-006
+    generic_id: POLICY-006
+    title: "uRPF must be considered for external-facing interfaces"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Juniper JunOS", control: "7.4.1", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: "uRPF must be evaluated per-interface with knowledge of which are external; automation cannot determine this."
+    remediation: "Under each external interface: set interfaces <iface> unit 0 family inet rpf-check (strict or loose mode)"
+
+  - id: JUNOS-POLICY-007
+    generic_id: POLICY-007
+    title: "BGP import policy must filter bogon prefixes"
+    severity: high
+    cis:
+      - {benchmark: "CIS Juniper JunOS", control: "8.3.1", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: "Requires verifying each external BGP peer's import policy rejects bogon prefixes. Cannot be globally automated."
+    remediation: "Apply an import policy to all external BGP peers that rejects RFC 1918 and bogon prefixes."
+
+  - id: JUNOS-POLICY-008
+    generic_id: POLICY-008
+    title: "RSVP-TE must use authentication"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Juniper JunOS", control: "8.1.4", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: "RSVP may not be deployed; if present, per-interface auth must be checked."
+    remediation: "Under protocols rsvp interface X: set authentication-key <key>"
+
+  - id: JUNOS-POLICY-009
+    generic_id: POLICY-009
+    title: "Control plane protection filter must rate-limit protocols"
+    severity: high
+    cis:
+      - {benchmark: "CIS Juniper JunOS", control: "6.2.2", level: 1}
+    probe:
+      type: required_regex
+      # JunOS: policer under firewall filter applied to lo0 or system filter
+      pattern: '(?m)(set\s+firewall\s+policer\s+\S+\s+(if-exceeding|bandwidth-limit)|^\s+policer\s+\S+\s*\{)'
+    remediation: "Configure a policer in the RE protection filter to rate-limit OSPF, BGP, ICMP, and other control-plane protocols."
+
+  - id: JUNOS-MGMT-012
+    generic_id: MGMT-012
+    title: "SSH access must be restricted to specific source addresses"
+    severity: high
+    cis:
+      - {benchmark: "CIS Juniper JunOS", control: "1.2.3", level: 1}
+    probe:
+      type: required_regex
+      # Access restrictions: management firewall filter on lo0 covering SSH port 22
+      # OR dedicated SSH allowed-addresses block
+      pattern: '(?m)(set\s+system\s+services\s+ssh\s+connection-limit|lo0.*filter.*input.*ssh|destination-port\s+(22|ssh))'
+    remediation: "Restrict SSH access via firewall filter on lo0 or set system services ssh connection-limit."
+
+  - id: JUNOS-AUTH-005
+    generic_id: AUTH-005
+    title: "Password change interval must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Juniper JunOS", control: "2.2.5", level: 1}
+    probe:
+      type: required_regex
+      # set format: set system login password change-type set-transitions N
+      pattern: '(?m)(set\s+system\s+login\s+password\s+change-type|set\s+system\s+login\s+password\s+maximum-time)'
+    remediation: "Configure: set system login password maximum-time 90"
+
+  - id: JUNOS-MGMT-013
+    generic_id: MGMT-013
+    title: "System hostname must be configured"
+    severity: low
+    cis:
+      - {benchmark: "CIS Juniper JunOS", control: "1.5.1", level: 1}
+    probe:
+      type: required_regex
+      # set format: set system host-name <name>
+      # curly format: host-name <name>; inside system {
+      pattern: '(?m)(set\s+system\s+host-name\s+\S+|^\s+host-name\s+\S+\s*;)'
+    remediation: "Configure: set system host-name <device-hostname>"
+
+  - id: JUNOS-MGMT-014
+    generic_id: MGMT-014
+    title: "System domain-name must be configured"
+    severity: low
+    cis:
+      - {benchmark: "CIS Juniper JunOS", control: "1.5.2", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?m)(set\s+system\s+domain-name\s+\S+|^\s+domain-name\s+\S+\s*;)'
+    remediation: "Configure: set system domain-name <your.domain>"
+
+  - id: JUNOS-LOG-008
+    generic_id: LOG-008
+    title: "Kernel and user facility events must be logged"
+    severity: medium
+    cis:
+      - {benchmark: "CIS Juniper JunOS", control: "4.1.8", level: 1}
+    probe:
+      type: required_regex
+      # set format: set system syslog host <ip> kernel any  or  user any
+      pattern: '(?m)(set\s+system\s+syslog\s+\S+\s+(kernel|user)\s+|^\s+(kernel|user)\s+\S+\s*;)'
+    remediation: "Configure: set system syslog host <ip> kernel any; set system syslog host <ip> user any"
+
+  - id: JUNOS-AAA-006
+    generic_id: AAA-006
+    title: "Login class must restrict superuser access"
+    severity: high
+    cis:
+      - {benchmark: "CIS Juniper JunOS", control: "2.3.3", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: "Requires checking each user's login class to confirm superuser role is justified. Topology and operational context needed."
+    remediation: "Assign least-privilege login classes. Only designated accounts should have superuser class."
+
+  - id: JUNOS-SNMP-006
+    generic_id: SNMP-006
+    title: "SNMP community must not have unrestricted write access"
+    severity: critical
+    cis:
+      - {benchmark: "CIS Juniper JunOS", control: "3.1.6", level: 1}
+    probe:
+      type: forbidden_regex
+      # set format: set snmp community <name> authorization read-write (without client restriction)
+      # curly format: authorization read-write; inside a community block without clients
+      pattern: '(?m)set\s+snmp\s+community\s+\S+\s+authorization\s+read-write(?!\s+clients)'
+    remediation: "Remove SNMP write communities or restrict with clients: set snmp community X authorization read-only"
