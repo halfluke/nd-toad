@@ -11,7 +11,6 @@ Usage examples:
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 from typing import Optional
 
@@ -156,7 +155,6 @@ def _audit_file(path: Path, vendor_override: str | None, quiet: bool = False) ->
 
 
 def _print_result(result, *, show_pass: bool, show_manual: bool) -> None:
-    from fluff.engine.models import AuditResult
     s = result.summary
     console.rule(f"[bold]{s.profile}[/bold] — {s.hostname or 'unknown host'}")
 
@@ -227,7 +225,7 @@ def detect_cmd(
 
     result = detect_from_file(input_file)
     if result is None:
-        console.print(f"[yellow]Unknown vendor[/yellow] — no profile reached detection threshold.")
+        console.print("[yellow]Unknown vendor[/yellow] — no profile reached detection threshold.")
         raise typer.Exit(code=1)
 
     console.print(f"Profile:    [bold]{result.profile}[/bold]")

@@ -11,10 +11,9 @@ Detection happens at load() time based on file content.
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 
-from fluff.parsers.base import ConfigLine, ConfigBlock, TextBasedConfig
+from fluff.parsers.base import TextBasedConfig
 from fluff.parsers.cisco_asa import CiscoASAConfig
 
 

@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from fluff.parsers.base import ConfigBlock, ConfigLine, TextBasedConfig
+from fluff.parsers.base import TextBasedConfig
 
 
 class FortiOSConfig(TextBasedConfig):

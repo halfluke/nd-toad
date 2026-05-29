@@ -6,7 +6,6 @@ Provides a thin wrapper around lxml (preferred) with stdlib ElementTree fallback
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
 
 try:
     from lxml import etree as ET
