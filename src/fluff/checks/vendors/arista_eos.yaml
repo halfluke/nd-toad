@@ -1,4 +1,5 @@
 # Arista EOS security checks — CIS Arista EOS Benchmark L1 mapping
+vendor: arista
 profile: arista_eos
 
 checks:

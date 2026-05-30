@@ -1,5 +1,6 @@
 # Check Point security checks — CIS Check Point Benchmark L1 mapping
 # Input: CLISH/Gaia config export or SmartConsole object dump
+vendor: checkpoint
 profile: checkpoint
 
 checks:
@@ -48,6 +49,7 @@ checks:
       - {benchmark: "CIS Check Point", control: "2.1.1", level: 1}
     probe:
       type: manual
+      reason: "Requires reviewing external AAA configuration in SmartConsole — not present in CLI config text."
     remediation: "In SmartConsole > Global Properties > Authentication: configure TACACS+/RADIUS for admin authentication."
 
   - id: CP-AUTH-001
@@ -58,6 +60,7 @@ checks:
       - {benchmark: "CIS Check Point", control: "2.2.1", level: 1}
     probe:
       type: manual
+      reason: "Password policy must be verified in SmartConsole > Global Properties > Authentication."
     remediation: "In SmartConsole: rename or delete the default 'admin' SmartConsole account."
 
   - id: CP-AUTH-002
@@ -92,6 +95,7 @@ checks:
       - {benchmark: "CIS Check Point", control: "4.1.1", level: 1}
     probe:
       type: manual
+      reason: "Log-forwarding settings live in SmartConsole policy — not extractable from CLI config."
     remediation: "In SmartConsole > Logs & Monitor > Log Servers: configure log forwarding to SIEM."
 
   - id: CP-TIME-001
@@ -115,6 +119,7 @@ checks:
       - {benchmark: "CIS Check Point", control: "6.1.1", level: 1}
     probe:
       type: manual
+      reason: "Implicit-drop rule must be verified in the policy rulebase via SmartConsole."
     remediation: "In SmartConsole: review and remove any accept rules with Source=Any, Destination=Any, Service=Any."
 
   - id: CP-POLICY-002
@@ -125,6 +130,7 @@ checks:
       - {benchmark: "CIS Check Point", control: "6.1.2", level: 1}
     probe:
       type: manual
+      reason: "Stealth rule presence requires review of the full ordered rulebase in SmartConsole."
     remediation: "Ensure the last security rule is: Source=Any, Dest=Any, Action=Drop, Track=Log."
 
   # ── Additional CIS Check Point L1 controls ────────────────────────────────

@@ -1,4 +1,5 @@
 # Cisco NX-OS security checks — CIS Cisco NX-OS Benchmark L1 mapping
+vendor: cisco
 profile: cisco_nxos
 
 checks:
@@ -168,6 +169,7 @@ checks:
       - {benchmark: "CIS Cisco NX-OS", control: "7.1.1", level: 1}
     probe:
       type: manual
+      reason: "Unused interfaces must be identified and audited manually against the network diagram."
     remediation: "Audit: show feature | grep enabled — disable any feature not required."
 
   # ── Additional CIS NX-OS L1 controls ─────────────────────────────────────

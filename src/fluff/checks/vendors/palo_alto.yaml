@@ -1,5 +1,6 @@
 # Palo Alto Networks PAN-OS security checks — CIS Palo Alto Firewall 11 L1 mapping
 # Input: XML config export. Probes use regex on serialized XML text.
+vendor: palo_alto
 profile: palo_alto
 
 checks:
@@ -85,6 +86,7 @@ checks:
       - {benchmark: "CIS Palo Alto Firewall 11", control: "2.2.1", level: 1}
     probe:
       type: manual
+      reason: "Certificate profiles and administrator auth settings must be verified in Device > Authentication Profile."
     remediation: "Verify Device > Administrators: all superuser accounts must have authentication profile with MFA."
 
   - id: PAN-AUTH-002
@@ -155,6 +157,7 @@ checks:
       - {benchmark: "CIS Palo Alto Firewall 11", control: "6.1.2", level: 1}
     probe:
       type: manual
+      reason: "Default-deny policy must be verified by reviewing the full security policy rulebase in the device GUI."
     remediation: "Review rules with application=any; replace with specific application identifiers where possible."
 
   - id: PAN-POLICY-003
@@ -165,6 +168,7 @@ checks:
       - {benchmark: "CIS Palo Alto Firewall 11", control: "6.2.1", level: 1}
     probe:
       type: manual
+      reason: "AV/Threat profiles must be verified per policy rule — cannot be confirmed from a single regex match."
     remediation: "Verify WildFire analysis profile is attached to security policies via Security Profiles."
 
   # ── Additional CIS Palo Alto Firewall L1 controls ─────────────────────────

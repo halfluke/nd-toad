@@ -1,5 +1,6 @@
 # Cisco IOS / IOS-XE security checks — CIS Cisco IOS 17 Benchmark L1 mapping
 # ~20 automated checks + manual entries emitted from cis_catalog.yaml
+vendor: cisco
 profile: cisco_ios
 
 checks:

@@ -10,6 +10,7 @@
 # Root element: <Configuration APIVersion="NNNN.N" IPS_CAT_VER="N">
 # Individual objects appear as direct children, e.g. <AdminSettings>, <FirewallRule>, ...
 #
+vendor: sophos
 profile: sophos_xg
 
 checks:
@@ -35,6 +36,7 @@ checks:
       - {benchmark: "CIS Sophos XG", control: "1.1.2", level: 1}
     probe:
       type: manual
+      reason: "Admin IP restriction must be verified in System > Administration > Admin and User Settings."
       # The Entities.xml export has NO configurable HTTP admin port: <WebAdminSettings>
       # only exposes <HTTPSport>. A regex for '<Port>80</Port>' fires on any firewall
       # rule that permits HTTP to web servers — a significant false positive on virtually
@@ -62,6 +64,7 @@ checks:
       - {benchmark: "CIS Sophos XG", control: "2.1.1", level: 1}
     probe:
       type: manual
+      reason: "External authentication server configuration must be verified in Authentication > Servers."
     remediation: "In Authentication > Authentication Servers: configure RADIUS/LDAP/TACACS+ for admin authentication."
 
   - id: XG-AUTH-001
@@ -72,6 +75,7 @@ checks:
       - {benchmark: "CIS Sophos XG", control: "2.2.1", level: 1}
     probe:
       type: manual
+      reason: "Sophos XG password complexity requires manual review in System > Administration settings."
     remediation: "Verify the admin account password has been changed from factory default."
 
   - id: XG-SNMP-001
@@ -121,6 +125,7 @@ checks:
       - {benchmark: "CIS Sophos XG", control: "6.1.1", level: 1}
     probe:
       type: manual
+      reason: "Firewall policy default-deny must be verified by reviewing the full policy rulebase."
     remediation: "Review FirewallRule entries: ensure no rule has Action=Accept with no SourceZones/DestinationZones restriction."
 
   - id: XG-POLICY-002

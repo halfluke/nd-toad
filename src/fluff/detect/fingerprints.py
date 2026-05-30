@@ -33,7 +33,8 @@ PROFILE_SIGNALS: dict[str, list[_Signal]] = {
         (r"(?m)^interface Vlan\d", 1.5, "IOS SVI interface"),
         (r"(?m)^ip ssh version", 1.0, "ip ssh version"),
         (r"(?m)^hostname ", 0.5, "hostname line"),
-        (r"(?m)^!RANCID-CONTENT-TYPE: cisco\b", 3.0, "RANCID cisco tag"),
+        # \b matches before '-' in "cisco-xr"; use $ to match exactly "cisco" end-of-line
+        (r"(?m)^!RANCID-CONTENT-TYPE: cisco$", 3.0, "RANCID cisco tag"),
         (r"(?m)^aaa new-model\b", 1.5, "aaa new-model (IOS)"),
         (r"(?m)^aaa (accounting|authentication|authorization) ", 1.0, "IOS aaa command"),
         (r"(?m)^ip access-list (extended|standard) ", 1.5, "IOS named ACL"),
@@ -237,7 +238,7 @@ PROFILE_SIGNALS: dict[str, list[_Signal]] = {
         (r"(?m)^network-clock\b", 2.0, "IOS-XE network-clock"),
         (r"(?m)^(no )?ip forward-protocol nd\b", 2.0, "IOS-XE ip forward-protocol nd"),
         (r"(?m)^crypto pki trustpoint\b", 2.0, "IOS-XE PKI trustpoint"),
-        (r"(?m)^!RANCID-CONTENT-TYPE: cisco\b", 2.0, "RANCID cisco tag"),
+        (r"(?m)^!RANCID-CONTENT-TYPE: cisco$", 2.0, "RANCID cisco tag"),
         (r"(?m)^ip tcp synwait-time\b", 1.5, "IOS-XE tcp synwait-time"),
         (r"(?m)^ASA Version", -10.0, "ASA Version header (not XE)"),
         (r"(?m)^(feature|vpc domain)\b", -5.0, "NX-OS feature (not XE)"),
@@ -246,6 +247,7 @@ PROFILE_SIGNALS: dict[str, list[_Signal]] = {
     # ---------------------------------------------------------- Cisco IOS-XR
     "cisco_xr": [
         (r"(?m)^!! IOS XR", 5.0, "IOS-XR config header"),
+        (r"(?m)^!RANCID-CONTENT-TYPE: cisco-xr\b", 5.0, "RANCID cisco-xr tag"),
         (r"(?m)^!! Last configuration change", 3.0, "IOS-XR last config comment"),
         (r"(?m)^(router isis|router ospf|router bgp) \d+\s*$", 3.0, "IOS-XR routing protocol block"),
         (r"(?m)^interface (GigabitEthernet|TenGigE|HundredGigE|Bundle-Ether|Loopback)\d+/\d+/\d+", 4.0, "IOS-XR XR interface naming"),
@@ -327,8 +329,7 @@ def detect(text: str) -> DetectionResult | None:
         total = 0.0
         matched: list[str] = []
         for pattern, weight, label in signals:
-            flags = re.IGNORECASE | re.DOTALL if weight > 0 else re.IGNORECASE | re.DOTALL
-            if re.search(pattern, text, flags):
+            if re.search(pattern, text, re.IGNORECASE | re.DOTALL):
                 total += weight
                 if weight > 0:
                     matched.append(label)

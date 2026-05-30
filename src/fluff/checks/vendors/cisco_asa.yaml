@@ -1,4 +1,5 @@
 # Cisco ASA security checks — CIS Cisco ASA 9.x Benchmark L1 mapping
+vendor: cisco
 profile: cisco_asa
 
 checks:

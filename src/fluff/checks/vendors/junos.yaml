@@ -3,6 +3,7 @@
 # All patterns support BOTH export formats:
 #   Set format    : "show configuration | display set"  → set system services ssh
 #   Curly format  : "show configuration"               → services { ssh; }
+vendor: juniper
 profile: junos
 
 checks:

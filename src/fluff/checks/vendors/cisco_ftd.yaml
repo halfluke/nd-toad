@@ -1,5 +1,6 @@
 # Cisco FTD / Firepower security checks
 # Covers FDM-managed devices (ASA-shaped CLI) and notes FMC-only controls as manual.
+vendor: cisco
 profile: cisco_ftd
 
 checks:
@@ -104,6 +105,7 @@ checks:
       - {benchmark: "CIS Cisco Firepower", control: "5.2.1", level: 1}
     probe:
       type: manual
+      reason: "FMC integration requires checking FMC GUI or API — not present in LINA running config."
     remediation: "In FMC: Access Control Policy → verify IPS policy is set on each allow rule."
 
   - id: FTD-FMC-002
@@ -115,6 +117,7 @@ checks:
       - {benchmark: "CIS Cisco Firepower", control: "5.3.1", level: 1}
     probe:
       type: manual
+      reason: "IPS policy assignment requires review in FMC — cannot be confirmed from LINA config."
     remediation: "In FMC: Access Control Policy → File Policy must be assigned to applicable rules."
 
   - id: FTD-TIME-001

@@ -1,4 +1,5 @@
 # HPE Aruba / ProCurve security checks — generic hardening + CIS where published
+vendor: hpe
 profile: hpe_aruba
 
 checks:

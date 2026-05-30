@@ -1,6 +1,7 @@
 # Nokia SR OS security checks — supports classic CLI and MD-CLI flat format
 # Classic CLI: configure ... exit block indented tree (TiMOS header)
 # MD-CLI flat: /configure system name "R1" per-line style
+vendor: nokia
 profile: nokia_sros
 
 checks:

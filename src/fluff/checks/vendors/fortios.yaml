@@ -1,4 +1,5 @@
 # Fortinet FortiOS security checks — CIS FortiOS Benchmark L1 mapping
+vendor: fortinet
 profile: fortios
 
 checks:
@@ -178,6 +179,7 @@ checks:
       - {benchmark: "CIS Fortinet FortiOS", control: "6.2.1", level: 1}
     probe:
       type: manual
+      reason: "Default-deny posture must be verified by inspecting all firewall policies and their ordering in FortiOS."
     remediation: "Review each 'config firewall policy' entry and ensure ips-sensor or app-sensor is applied to permitted traffic."
 
   # ── Additional CIS FortiOS L1 controls ───────────────────────────────────

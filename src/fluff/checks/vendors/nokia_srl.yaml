@@ -1,6 +1,7 @@
 # Nokia SR Linux security checks — supports JSON export and flat CLI set format
 # JSON: probes run on pretty-printed JSON text
 # Flat CLI: probes run on raw "set / ..." lines
+vendor: nokia
 profile: nokia_srl
 
 checks:
@@ -82,6 +83,7 @@ checks:
       - {benchmark: "Nokia SR Linux Hardening", control: "6.1.1", level: 1}
     probe:
       type: manual
+      reason: "Routing policy must be reviewed against the network design to confirm only authorised prefixes are advertised."
     remediation: "Review all entries under /acl/ipv4-filter and /acl/ipv6-filter. Verify no unconditional accept entry exists."
 
   - id: SRL-AUTH-001
@@ -92,6 +94,7 @@ checks:
       - {benchmark: "Nokia SR Linux Hardening", control: "2.2.1", level: 1}
     probe:
       type: manual
+      reason: "Certificate-based SSH authentication requires manual inspection of key management and user auth config."
     remediation: "Review /system/aaa/authentication/local-users. Disable or delete accounts not required."
 
   # ── Additional Nokia SR Linux Hardening controls ──────────────────────────
