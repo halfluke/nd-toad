@@ -21,12 +21,19 @@ checks:
     cis:
       - {benchmark: "VMware SD-WAN Security Review Methodology", control: "FW-EdgeAccess-SSH", level: 1}
     probe:
-      type: forbidden_regex
-      # Flag when SSH is enabled AND allowSelectedIp is empty (no restriction)
-      pattern: '(?s)firewall\.services\.ssh\.enabled = True.*?firewall\.services\.ssh\.allowSelectedIp = \[\]'
+      type: manual_fp_risk
+      reason: >
+        Reliable detection requires checking whether SSH is enabled AND the
+        allowSelectedIp list is empty. In the flat-text representation, empty
+        lists produce no lines at all, so a regex cannot distinguish
+        "SSH enabled, unrestricted" from "SSH disabled". The velo_collector.py
+        tool's analyse_edge_access function performs this check correctly
+        using the raw JSON. Review its findings for [FW] Edge Local Access
+        Restrictions.
     remediation: >
       Configure > Profiles/Edges > Firewall > Edge Access: disable SSH or restrict
-      to approved management source IP ranges.
+      to approved management source IP ranges. Source IP restrictions appear in the
+      flat text as firewall.services.ssh.allowSelectedIp.0, .1, etc.
 
   - id: VCO-FW-002
     generic_id: FW-002

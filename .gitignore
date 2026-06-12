@@ -10,3 +10,15 @@ venv/
 .coverage
 htmlcov/
 *.pyc
+
+# Credential / environment files — NEVER commit these
+vcoenv.txt
+nsxenv.txt
+*.env
+.env*
+*_credentials.txt
+*_secrets.txt
+
+# Collector output directories (may contain real device data)
+vco_output/
+nsx_bundle*.json
