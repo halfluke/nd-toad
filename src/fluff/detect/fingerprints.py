@@ -309,6 +309,54 @@ PROFILE_SIGNALS: dict[str, list[_Signal]] = {
         (r"(?m)^set / network-instance\b", 3.0, "SRL flat CLI network-instance"),
         (r"(?m)^set / interface system0\b", 3.0, "SRL flat CLI system0 loopback"),
     ],
+    # -------------------------------------------------- VMware VeloCloud SD-WAN
+    # Input: flat dot-notation text produced by the VeloCloudConfig parser
+    # (originally a combined/<edge>_combined.json from tools/velo_collector.py)
+    "vmware_velocloud": [
+        # Mandatory: collector always writes these top-level edge keys
+        (r"(?m)^edge\.edgeName = ", 5.0, "VeloCloud edge.edgeName flat key"),
+        (r"(?m)^edge\.activationState = ", 4.0, "VeloCloud edge.activationState"),
+        (r"(?m)^effective\.ntp\.", 3.0, "VeloCloud effective.ntp flat key"),
+        (r"(?m)^firewall\.stateful_firewall_enabled = ", 4.0, "VeloCloud firewall module key"),
+        (r"(?m)^firewall\.services\.", 3.0, "VeloCloud firewall.services flat key"),
+        (r"(?m)^effective\.snmp\.", 3.0, "VeloCloud effective.snmp flat key"),
+        (r"(?m)^effective\.routedInterfaces\.\d+\.", 3.0, "VeloCloud routedInterfaces flat key"),
+        (r"(?m)^wan\.", 2.0, "VeloCloud wan module flat key"),
+        (r"(?m)^controlPlane\.", 2.0, "VeloCloud controlPlane module flat key"),
+        # JSON-level signals (before flattening, if raw JSON is tested)
+        (r'"edgeLogicalId"\s*:', 3.0, "VeloCloud edgeLogicalId JSON key"),
+        (r'"profileConfig"\s*:', 4.0, "VeloCloud profileConfig JSON key"),
+        (r'"firewallConfig"\s*:', 3.0, "VeloCloud firewallConfig JSON key"),
+        (r'"wanConfig"\s*:', 3.0, "VeloCloud wanConfig JSON key"),
+        (r'"activationState"\s*:\s*"ACTIVATED"', 4.0, "VeloCloud ACTIVATED state JSON"),
+        # Negative: avoid confusion with NSX bundle
+        (r'"_nd_toad_profile"\s*:\s*"vmware_nsx"', -10.0, "NSX bundle marker (not VeloCloud)"),
+    ],
+    # -------------------------------------------------------- VMware NSX 4.x
+    # Input: flat dot-notation text produced by the VmwareNSXConfig parser
+    # (originally a bundle JSON from tools/nsx_collector.py)
+    "vmware_nsx": [
+        # Collector always writes this marker
+        (r'(?m)^_nd_toad_profile = vmware_nsx', 10.0, "NSX bundle profile marker (flat)"),
+        (r'"_nd_toad_profile"\s*:\s*"vmware_nsx"', 10.0, "NSX bundle profile marker (JSON)"),
+        # NSX-specific API response keys in flat text
+        (r"(?m)^ssh_service\.service_properties\.", 5.0, "NSX ssh_service flat key"),
+        (r"(?m)^ntp_service\.server\.\d+\.", 5.0, "NSX ntp_service flat key"),
+        (r"(?m)^cluster\.cluster_id = ", 4.0, "NSX cluster.cluster_id flat key"),
+        (r"(?m)^auth_policy\.api_failed_auth_lockout_period\b", 4.0, "NSX auth_policy flat key"),
+        (r"(?m)^global_config\.fips_enabled = ", 4.0, "NSX global_config FIPS flat key"),
+        (r"(?m)^node_version\.product_version = ", 3.0, "NSX node_version flat key"),
+        (r"(?m)^snmp_service\.", 3.0, "NSX snmp_service flat key"),
+        (r"(?m)^syslog\.", 3.0, "NSX syslog flat key"),
+        # JSON-level signals
+        (r'"ssh_service"\s*:', 3.0, "NSX ssh_service JSON key"),
+        (r'"ntp_service"\s*:', 3.0, "NSX ntp_service JSON key"),
+        (r'"auth_policy"\s*:', 3.0, "NSX auth_policy JSON key"),
+        (r'"global_config"\s*:', 2.0, "NSX global_config JSON key"),
+        # Negative: avoid confusion with VeloCloud
+        (r"(?m)^edge\.edgeName = ", -10.0, "VeloCloud edge key (not NSX)"),
+        (r'"profileConfig"\s*:', -5.0, "VeloCloud profileConfig key (not NSX)"),
+    ],
 }
 
 MIN_CONFIDENCE = 0.3

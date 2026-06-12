@@ -191,6 +191,62 @@ class TestF5BigIPParser:
         assert "sys global-settings" in self.config.text
 
 
+class TestVmwareVeloCloudParser:
+    @pytest.fixture(autouse=True)
+    def setup(self) -> None:
+        path = FIXTURES_DIR / "vmware_velocloud" / "good.json"
+        self.config = load_config(path, "vmware_velocloud")
+
+    def test_vendor_and_profile(self) -> None:
+        assert self.config.vendor == "vmware"
+        assert self.config.profile == "vmware_velocloud"
+
+    def test_hostname_extraction(self) -> None:
+        assert self.config.get_hostname() == "EDGE-BRANCH-01"
+
+    def test_flat_text_has_edge_keys(self) -> None:
+        assert "edge.edgeName = EDGE-BRANCH-01" in self.config.text
+
+    def test_flat_text_has_firewall_keys(self) -> None:
+        assert "firewall.stateful_firewall_enabled" in self.config.text
+
+    def test_flat_text_has_effective_ntp(self) -> None:
+        assert "effective.ntp.enabled = True" in self.config.text
+
+    def test_find_lines(self) -> None:
+        lines = self.config.find_lines(r"effective\.ntp\.enabled")
+        assert len(lines) >= 1
+
+
+class TestVmwareNSXParser:
+    @pytest.fixture(autouse=True)
+    def setup(self) -> None:
+        path = FIXTURES_DIR / "vmware_nsx" / "good.json"
+        self.config = load_config(path, "vmware_nsx")
+
+    def test_vendor_and_profile(self) -> None:
+        assert self.config.vendor == "vmware"
+        assert self.config.profile == "vmware_nsx"
+
+    def test_hostname_extraction(self) -> None:
+        hostname = self.config.get_hostname()
+        assert hostname is not None
+        assert "nsx" in hostname.lower()
+
+    def test_profile_marker_in_flat_text(self) -> None:
+        assert "_nd_toad_profile = vmware_nsx" in self.config.text
+
+    def test_flat_text_has_ssh_key(self) -> None:
+        assert "ssh_service.service_properties.running" in self.config.text
+
+    def test_flat_text_has_auth_policy(self) -> None:
+        assert "auth_policy.minimum_password_length" in self.config.text
+
+    def test_find_lines(self) -> None:
+        lines = self.config.find_lines(r"global_config\.fips_enabled")
+        assert len(lines) >= 1
+
+
 def test_unknown_profile_raises() -> None:
     with pytest.raises(ValueError, match="Unknown profile"):
         load_config(Path("/dev/null"), "nonexistent_vendor")

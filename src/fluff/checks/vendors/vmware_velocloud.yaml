@@ -1,0 +1,800 @@
+# VMware VeloCloud SD-WAN compliance checks
+# Source: Broadcom SD-WAN Security Configuration Guide + VMware SD-WAN Security Review Methodology
+# Input format: combined edge JSON flattened to dot-notation text
+#               (produced by tools/velo_collector.py)
+#
+# Check counts: 11 automated (required_regex/forbidden_regex)
+#               22 manual_fp_risk (logic requires JSON traversal)
+#               16 manual (UI-only or live-state required)
+#               Total: 49
+
+vendor: vmware
+profile: vmware_velocloud
+checks:
+
+  # ── [FW] Edge Local Access – SSH ──────────────────────────────────────────
+
+  - id: VCO-FW-001
+    generic_id: FW-001
+    title: "SSH management service must be disabled or restricted to approved source IPs"
+    severity: high
+    cis:
+      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "FW-EdgeAccess-SSH", level: 1}
+    probe:
+      type: forbidden_regex
+      # Flag when SSH is enabled AND allowSelectedIp is empty (no restriction)
+      pattern: '(?s)firewall\.services\.ssh\.enabled = True.*?firewall\.services\.ssh\.allowSelectedIp = \[\]'
+    remediation: >
+      Configure > Profiles/Edges > Firewall > Edge Access: disable SSH or restrict
+      to approved management source IP ranges.
+
+  - id: VCO-FW-002
+    generic_id: FW-002
+    title: "Console management service must be disabled"
+    severity: high
+    cis:
+      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "FW-EdgeAccess-Console", level: 1}
+    probe:
+      type: forbidden_regex
+      pattern: 'firewall\.services\.console\.enabled = True'
+    remediation: >
+      Configure > Profiles/Edges > Firewall > Edge Access: disable Console access.
+
+  - id: VCO-FW-003
+    generic_id: FW-003
+    title: "USB access must be disabled on edges"
+    severity: medium
+    cis:
+      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "FW-EdgeAccess-USB", level: 1}
+    probe:
+      type: forbidden_regex
+      pattern: 'firewall\.services\.usb\.disabled = False'
+    remediation: >
+      Configure > Profiles/Edges > Firewall > Edge Access: set USB to disabled.
+
+  # ── [FW] Firewall Event Logging ───────────────────────────────────────────
+
+  - id: VCO-FW-004
+    generic_id: FW-004
+    title: "Firewall event logging must be enabled"
+    severity: high
+    cis:
+      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "FW-Logging", level: 1}
+    probe:
+      type: required_regex
+      pattern: 'firewall\.firewall_logging_enabled = True'
+    remediation: >
+      Configure > Profiles/Edges > Firewall: enable firewall event logging on all
+      active segments.
+
+  - id: VCO-FW-005
+    generic_id: FW-005
+    title: "Firewall syslog forwarding must not be disabled"
+    severity: medium
+    cis:
+      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "FW-SyslogFwd", level: 1}
+    probe:
+      type: forbidden_regex
+      pattern: 'firewall\.syslog_forwarding = False'
+    remediation: >
+      Configure > Profiles/Edges > Firewall: enable syslog forwarding for firewall
+      events.
+
+  # ── [FW] Default Deny ─────────────────────────────────────────────────────
+
+  - id: VCO-FW-006
+    generic_id: FW-006
+    title: "Firewall must enforce a default-deny posture (last rule denies all)"
+    severity: critical
+    cis:
+      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "FW-DefaultDeny", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: >
+        Verification requires examining the ordered rule set across all segments.
+        A regex check on the flat text cannot reliably determine rule ordering
+        or whether the implicit default action is deny-all. Use velo_collector.py
+        output or the Orchestrator UI to confirm the last rule in each segment's
+        firewall policy is a deny-all.
+    remediation: >
+      Configure > Profiles/Edges > Firewall: ensure the last rule in every segment
+      firewall policy is an explicit deny-all or set the default action to Block.
+
+  - id: VCO-FW-007
+    generic_id: FW-007
+    title: "Firewall rules must use narrowly scoped source and destination criteria"
+    severity: medium
+    cis:
+      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "FW-RuleScope", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: >
+        Evaluation of each firewall rule's source/destination requires parsing
+        the nested rules array per segment. A wide-match regex would generate
+        false positives. Review the Orchestrator UI or the firewallConfig module
+        in the combined JSON.
+    remediation: >
+      Configure > Profiles/Edges > Firewall: replace any/any rules with the
+      minimum required source and destination criteria.
+
+  # ── [FW] NAT Exposure ─────────────────────────────────────────────────────
+
+  - id: VCO-FW-008
+    generic_id: FW-008
+    title: "DNAT rules must not expose internal services to untrusted networks without justification"
+    severity: high
+    cis:
+      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "FW-NATExposure", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: >
+        NAT exposure assessment requires enumerating all DNAT entries in the
+        combined JSON and determining whether the exposed service and destination
+        IP are authorised. The risk of false positives from flat-text matching
+        of DNAT entries is too high.
+    remediation: >
+      Configure > Profiles/Edges > Firewall: review all inbound DNAT rules and
+      remove or restrict any that expose services unnecessarily.
+
+  # ── [FW] Segment Enforcement ──────────────────────────────────────────────
+
+  - id: VCO-FW-009
+    generic_id: FW-009
+    title: "Firewall policies must be enforced per segment"
+    severity: high
+    cis:
+      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "FW-SegmentEnforcement", level: 1}
+    probe:
+      type: manual
+      reason: >
+        Segment-level firewall enforcement requires UI review to confirm that
+        separate firewall policies are applied per segment and not globally
+        inherited without restriction.
+    remediation: >
+      Configure > Profiles > Firewall: configure distinct firewall policies for
+      each network segment where isolation is required.
+
+  # ── [FW] Advanced Security Features ──────────────────────────────────────
+
+  - id: VCO-FW-010
+    generic_id: FW-010
+    title: "Advanced security features (ATP/IDS/IPS/URL filtering) should be enabled where licensed"
+    severity: low
+    cis:
+      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "FW-AdvancedSecurity", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: >
+        Advanced security feature availability is licence-dependent and cannot
+        be determined from flat-text analysis. Review the Orchestrator UI under
+        each profile's Security settings.
+    remediation: >
+      Configure > Profiles > Firewall > Edge Access: enable ATP, IDS/IPS, and
+      URL filtering services where a valid licence is present.
+
+  # ── [Monitoring] Central Logging ──────────────────────────────────────────
+
+  - id: VCO-MON-001
+    generic_id: MON-001
+    title: "Syslog servers must be configured for central log collection"
+    severity: high
+    cis:
+      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "MON-CentralLogging", level: 1}
+    probe:
+      type: required_regex
+      # Syslog collectors appear as effective.segments.<n>.syslog.collectors or
+      # effective.syslog.collectors in the flat text
+      pattern: '(?i)effective\.(segments\.\d+\.)?syslog\.collectors?\.\d+'
+    remediation: >
+      Configure > Profiles/Edges > Device > Telemetry > Syslog: add SIEM or syslog
+      server collectors for all segments.
+
+  - id: VCO-MON-002
+    generic_id: MON-002
+    title: "Firewall log collection must be forwarded to syslog or Orchestrator log storage"
+    severity: medium
+    cis:
+      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "MON-FirewallLogCollection", level: 1}
+    probe:
+      type: required_regex
+      pattern: 'firewall\.firewall_logging_enabled = True'
+    remediation: >
+      Configure > Profiles/Edges > Firewall and Device > Telemetry > Syslog:
+      enable firewall logging and configure syslog collectors.
+
+  - id: VCO-MON-003
+    generic_id: MON-003
+    title: "Admin activity logs must be reviewed periodically"
+    severity: medium
+    cis:
+      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "MON-AdminActivityLogs", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: >
+        Verifying that admin activity logs are actually reviewed requires
+        checking enterprise audit event logs. Use velo_collector.py with --events
+        to retrieve MGD_CONF_* events and confirm periodic review.
+    remediation: >
+      Orchestrator > Monitor > Events: filter for configuration change events
+      and confirm periodic review by a named reviewer.
+
+  - id: VCO-MON-004
+    generic_id: MON-004
+    title: "Event review process must be established for configuration changes"
+    severity: low
+    cis:
+      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "MON-EventReview", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: >
+        Requires checking enterprise audit logs for review cadence. Use
+        velo_collector.py --events to validate.
+    remediation: >
+      Establish and document a schedule for reviewing Orchestrator event logs.
+
+  - id: VCO-MON-005
+    generic_id: MON-005
+    title: "Configuration change logs must be retained"
+    severity: medium
+    cis:
+      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "MON-ConfigChangeLogs", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: >
+        Log retention settings are in the Orchestrator global configuration,
+        not in the per-edge combined JSON. Verify under Orchestrator administration.
+    remediation: >
+      Orchestrator > Administration > System Properties: confirm log retention
+      meets organisational requirements.
+
+  - id: VCO-MON-006
+    generic_id: MON-006
+    title: "Critical event alerts must be configured for security-relevant events"
+    severity: high
+    cis:
+      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "MON-CriticalAlerts", level: 1}
+    probe:
+      type: manual
+      reason: >
+        Alert configuration is in the Orchestrator administration interface and
+        is not exportable via the API to the combined JSON.
+    remediation: >
+      Orchestrator > Administration > Alerts: configure email or SNMP traps for
+      critical security events.
+
+  # ── [System] NTP Time Synchronisation ────────────────────────────────────
+
+  - id: VCO-SYS-001
+    generic_id: SYS-001
+    title: "NTP servers must be configured for accurate time synchronisation"
+    severity: medium
+    cis:
+      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "SYS-NTP", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?i)effective\.ntp\.servers\.\d+\.(ip|address|host)'
+    remediation: >
+      Configure > Profiles/Edges > Device > NTP: add at least two authoritative
+      NTP server addresses.
+
+  - id: VCO-SYS-002
+    generic_id: SYS-002
+    title: "Edge software versions must meet the minimum supported release"
+    severity: high
+    cis:
+      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "SYS-EdgeVersions", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: >
+        Version comparison requires knowing the organisation-defined minimum
+        acceptable version (set via VCO_MIN_EDGE_VERSION). The regex cannot
+        perform a semantic version comparison. velo_collector.py performs this
+        check automatically.
+    remediation: >
+      Monitor > Network > Edges: identify edges below the minimum version and
+      schedule upgrade via Configure > Profiles/Edges > Device > Software Update.
+
+  - id: VCO-SYS-003
+    generic_id: SYS-003
+    title: "Edges must have patches applied"
+    severity: high
+    cis:
+      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "SYS-PatchLevels", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: >
+        Patch verification requires comparing the edge software version against
+        the current Broadcom security bulletin. Use velo_collector.py output
+        combined with the Broadcom release notes.
+    remediation: >
+      Configure > Profiles/Edges > Device > Software Update: apply the latest
+      maintenance release or security patch.
+
+  - id: VCO-SYS-004
+    generic_id: SYS-004
+    title: "Configuration consistency between profile and edge must be maintained"
+    severity: medium
+    cis:
+      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "SYS-ConfigConsistency", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: >
+        Structural diff between profile and edge device settings requires
+        comparing profileConfig and edgeConfig keys recursively.
+        velo_collector.py's analyse_structural_diff function performs this.
+    remediation: >
+      Review the structural diff output from velo_collector.py to identify
+      unintended edge-level overrides and align with the profile configuration.
+
+  - id: VCO-SYS-005
+    generic_id: SYS-005
+    title: "Edge configuration stack overrides must be reviewed and governed"
+    severity: medium
+    cis:
+      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "SYS-OverrideGovernance", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: >
+        Override governance requires identifying which edge-level configuration
+        modules override the profile and assessing the risk of each override.
+        Review velo_collector.py findings for override_governance category.
+    remediation: >
+      Audit and document all edge-level overrides; remove unauthorised or
+      unnecessary overrides that weaken the profile security baseline.
+
+  - id: VCO-SYS-006
+    generic_id: SYS-006
+    title: "Edge certificate authentication must be configured"
+    severity: high
+    cis:
+      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "SYS-CertAuth", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: >
+        Certificate authentication state is not exposed in the combined JSON.
+        Verify under Orchestrator > Monitor > Edges > Properties.
+    remediation: >
+      Ensure edges use certificate-based authentication for VCO communication.
+
+  - id: VCO-SYS-007
+    generic_id: SYS-007
+    title: "Centralised admin authentication (TACACS/RADIUS) must be configured"
+    severity: medium
+    cis:
+      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "SYS-AAA", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?i)effective\.(tacacs|radius)\.(serverIp|servers|host)'
+    remediation: >
+      Configure > Profiles/Edges > Device > Authentication: configure TACACS+
+      or RADIUS for edge administrative access.
+
+  - id: VCO-SYS-008
+    generic_id: SYS-008
+    title: "SNMP must be disabled or restricted to SNMPv3 with authentication"
+    severity: high
+    cis:
+      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "SYS-SNMP", level: 1}
+    probe:
+      type: forbidden_regex
+      pattern: 'effective\.snmp\.snmpv2c\.enabled = True'
+    remediation: >
+      Configure > Profiles/Edges > Device > SNMP: disable SNMPv2c and configure
+      SNMPv3 with authentication and privacy.
+
+  - id: VCO-SYS-009
+    generic_id: SYS-009
+    title: "BFD must be enabled on WAN links requiring fast failure detection"
+    severity: low
+    cis:
+      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "SYS-BFD", level: 1}
+    probe:
+      type: required_regex
+      pattern: 'effective\.bfd\.enabled = True'
+    remediation: >
+      Configure > Profiles/Edges > Device > Interfaces: enable BFD on WAN
+      interfaces where fast failure detection is required.
+
+  - id: VCO-SYS-010
+    generic_id: SYS-010
+    title: "High Availability must be configured for production-critical edges"
+    severity: medium
+    cis:
+      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "SYS-HA", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?i)effective\.(ha|haEnabled|standby)\.(enabled|mode) = (True|ACTIVE_STANDBY|CLUSTER)'
+    remediation: >
+      Configure > Edges > HA: configure Active-Standby or Cluster HA for
+      production-critical edges.
+
+  - id: VCO-SYS-011
+    generic_id: SYS-011
+    title: "Inactive or stale edges must be identified and decommissioned"
+    severity: low
+    cis:
+      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "SYS-InactiveEdges", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: >
+        Stale edge detection requires comparing the edge last-contact timestamp
+        against the organisation-defined threshold. velo_collector.py performs
+        this check automatically using the VCO_STALE_EDGE_DAYS variable.
+    remediation: >
+      Monitor > Network > Edges: filter for edges that have not connected within
+      the last 30 days and initiate decommission or investigation.
+
+  # ── [Net] Segment Isolation ───────────────────────────────────────────────
+
+  - id: VCO-NET-001
+    generic_id: NET-001
+    title: "Segments must restrict inter-segment communication"
+    severity: critical
+    cis:
+      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "NET-SegmentIsolation", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: >
+        Segment isolation requires inspecting the VPN configuration per segment
+        and verifying that Cloud VPN is not configured to allow cross-segment
+        traffic. velo_collector.py's analyse_segment_isolation function performs
+        this evaluation.
+    remediation: >
+      Configure > Profiles > Device (segment dropdown) > Cloud VPN: confirm
+      segments do not peer with each other unless explicitly required.
+
+  - id: VCO-NET-002
+    generic_id: NET-002
+    title: "Default segment business policy must be restrictive"
+    severity: high
+    cis:
+      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "NET-DefaultSegmentBehaviour", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: >
+        Verifying default segment policy restrictiveness requires parsing the
+        business-policy rules array per segment. velo_collector.py's
+        analyse_business_policy function performs this.
+    remediation: >
+      Configure > Profiles > Business Policy (default segment): ensure no
+      permissive catch-all rules exist that bypass intended security controls.
+
+  - id: VCO-NET-003
+    generic_id: NET-003
+    title: "Business policy overrides must not bypass segmentation controls"
+    severity: high
+    cis:
+      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "NET-BusinessPolicyOverride", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: >
+        Evaluating whether business policy overrides bypass segmentation requires
+        cross-referencing QoS rules with segment isolation configuration.
+    remediation: >
+      Configure > Profiles > Business Policy: audit all rules and remove any
+      that tunnel traffic across segment boundaries without authorisation.
+
+  - id: VCO-NET-004
+    generic_id: NET-004
+    title: "Overlay traffic must be encrypted on all WAN interfaces"
+    severity: critical
+    cis:
+      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "NET-OverlayEncryption", level: 1}
+    probe:
+      type: forbidden_regex
+      # Flag any routed WAN interface where encryptOverlay is explicitly False
+      pattern: 'effective\.routedInterfaces\.\d+\.encryptOverlay = False'
+    remediation: >
+      Configure > Profiles/Edges > Device > Interfaces: enable encryptOverlay
+      on all WAN routed interfaces carrying overlay traffic.
+
+  - id: VCO-NET-005
+    generic_id: NET-005
+    title: "Overlay management access must not be reachable from overlay networks"
+    severity: high
+    cis:
+      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "NET-OverlayMgmtAccess", level: 1}
+    probe:
+      type: manual
+      reason: >
+        Verifying overlay-to-management access restrictions requires reviewing
+        the network topology and firewall rules together with routing tables.
+    remediation: >
+      Ensure the Orchestrator management plane is not reachable via overlay
+      data-plane addresses. Use out-of-band management or strict firewall rules.
+
+  - id: VCO-NET-006
+    generic_id: NET-006
+    title: "Edge-to-edge communication must be scoped to authorised segments only"
+    severity: medium
+    cis:
+      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "NET-EdgeToEdge", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: >
+        Edge-to-edge peering configuration is in the segmentation and Cloud VPN
+        settings per segment. Review velo_collector.py's analyse_segmentation
+        output.
+    remediation: >
+      Configure > Profiles > Device (segment) > Cloud VPN: restrict edge-to-edge
+      peering to authorised segments.
+
+  - id: VCO-NET-007
+    generic_id: NET-007
+    title: "Route table must be reviewed for unexpected routes"
+    severity: medium
+    cis:
+      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "NET-RouteTableReview", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: >
+        Route table review requires live data from the Orchestrator enterprise
+        route API endpoint. Use velo_collector.py --deep to capture
+        routes/enterprise_route_table.json.
+    remediation: >
+      Review the enterprise route table for unexpected or unauthorised routes
+      and remove or filter them.
+
+  - id: VCO-NET-008
+    generic_id: NET-008
+    title: "DNS servers must be configured and must not use untrusted resolvers"
+    severity: medium
+    cis:
+      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "NET-DNS", level: 1}
+    probe:
+      type: required_regex
+      pattern: '(?i)effective\.dns\.(servers?\.\d+|primaryDns|secondaryDns)'
+    remediation: >
+      Configure > Profiles/Edges > Device > DNS: configure authoritative or
+      internal DNS servers and remove any untrusted public resolvers.
+
+  - id: VCO-NET-009
+    generic_id: NET-009
+    title: "Gateway assignments must be reviewed for unnecessary or risky gateways"
+    severity: low
+    cis:
+      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "NET-GatewayAssignment", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: >
+        Gateway assignment review requires comparing gateway logical IDs against
+        the approved gateway list. Use velo_collector.py --deep to capture
+        gateways/gateway_*_assignments.json.
+    remediation: >
+      Configure > Profiles > Device > Cloud VPN > Gateway: verify all assigned
+      gateways are on the approved gateway list.
+
+  # ── [VPN] Encryption Strength ─────────────────────────────────────────────
+
+  - id: VCO-VPN-001
+    generic_id: VPN-001
+    title: "VPN encryption must use strong algorithms (AES-256-GCM or equivalent)"
+    severity: high
+    cis:
+      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "VPN-CryptoStrength", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: >
+        VPN crypto profile verification requires inspecting the controlPlaneConfig
+        encryption settings. velo_collector.py's analyse_vpn_crypto function
+        performs this check.
+    remediation: >
+      Configure > Profiles > Device > Cloud VPN > Advanced Settings: select
+      AES-256-GCM or AES-256 with SHA-256 as the IPsec encryption profile.
+
+  - id: VCO-VPN-002
+    generic_id: VPN-002
+    title: "VPN certificate validation must be configured"
+    severity: high
+    cis:
+      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "VPN-CertValidation", level: 1}
+    probe:
+      type: manual
+      reason: >
+        Certificate validation for VPN sessions is verified through the
+        Orchestrator PKI configuration and edge certificate policy.
+    remediation: >
+      Ensure PKI certificates are provisioned on all edges and Orchestrator
+      validates edge certificates during tunnel establishment.
+
+  - id: VCO-VPN-003
+    generic_id: VPN-003
+    title: "VPN key rotation schedule must be defined"
+    severity: low
+    cis:
+      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "VPN-KeyRotation", level: 1}
+    probe:
+      type: manual
+      reason: >
+        Key rotation schedule verification requires reviewing Orchestrator
+        system properties and any external PKI policy documentation.
+    remediation: >
+      Define and document a key rotation schedule consistent with the
+      organisation's cryptographic policy.
+
+  # ── [Management] ──────────────────────────────────────────────────────────
+
+  - id: VCO-MGMT-001
+    generic_id: MGMT-001
+    title: "Multi-factor authentication must be enforced for all Orchestrator administrators"
+    severity: critical
+    cis:
+      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "MGMT-MFA", level: 1}
+    probe:
+      type: manual
+      reason: >
+        MFA enforcement is configured in the Orchestrator UI under
+        Administration > User Management > Authentication. It cannot be
+        assessed from the per-edge combined JSON.
+    remediation: >
+      Administration > User Management > Authentication: enable MFA for all
+      administrator accounts.
+
+  - id: VCO-MGMT-002
+    generic_id: MGMT-002
+    title: "RBAC roles must follow the principle of least privilege"
+    severity: high
+    cis:
+      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "MGMT-RBAC", level: 1}
+    probe:
+      type: manual
+      reason: >
+        Role assignment review requires enumerating user accounts and their
+        assigned roles in the Orchestrator UI.
+    remediation: >
+      Administration > User Management > Roles and Users: review all user
+      role assignments and revoke privileges not required for the user's function.
+
+  - id: VCO-MGMT-003
+    generic_id: MGMT-003
+    title: "API tokens must enforce an expiry date"
+    severity: high
+    cis:
+      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "MGMT-APITokenExpiry", level: 1}
+    probe:
+      type: manual
+      reason: >
+        API token expiry configuration is visible only in the Orchestrator UI
+        under Administration > User Management > Users > API Tokens.
+    remediation: >
+      Administration > User Management > API Tokens: set an expiry date on all
+      API tokens and revoke tokens that do not expire.
+
+  - id: VCO-MGMT-004
+    generic_id: MGMT-004
+    title: "API token permissions must be restricted to minimum required scope"
+    severity: high
+    cis:
+      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "MGMT-APITokenPrivileges", level: 1}
+    probe:
+      type: manual
+      reason: >
+        API token permissions inherit the associated user's role and must be
+        reviewed in the Orchestrator UI.
+    remediation: >
+      Administration > User Management > Roles and Users: ensure API token
+      owners are assigned roles with minimum required permissions.
+
+  - id: VCO-MGMT-005
+    generic_id: MGMT-005
+    title: "Orchestrator must not be directly accessible from the public internet"
+    severity: critical
+    cis:
+      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "MGMT-OrchestratorExposure", level: 1}
+    probe:
+      type: manual
+      reason: >
+        Orchestrator internet exposure assessment requires network topology
+        review and firewall rule inspection outside the edge combined JSON.
+    remediation: >
+      Place the Orchestrator behind a WAF or reverse proxy and restrict
+      access to authorised management IP ranges.
+
+  - id: VCO-MGMT-006
+    generic_id: MGMT-006
+    title: "API token enumeration must be prevented"
+    severity: medium
+    cis:
+      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "MGMT-TokenEnumeration", level: 1}
+    probe:
+      type: manual
+      reason: >
+        Token enumeration prevention is a platform-level control of the
+        Orchestrator API and requires validation through API response inspection.
+    remediation: >
+      Verify that the Orchestrator API does not return token values after creation
+      and that token IDs are non-guessable.
+
+  - id: VCO-MGMT-007
+    generic_id: MGMT-007
+    title: "Enterprise authentication mode must be set to enforce SSO or local-with-MFA"
+    severity: high
+    cis:
+      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "MGMT-AuthMode", level: 1}
+    probe:
+      type: manual
+      reason: >
+        Enterprise authentication mode is configured in the Orchestrator UI and
+        is not exported to the per-edge combined JSON.
+    remediation: >
+      Administration > User Management > Authentication: configure SSO via SAML
+      or enforce local authentication with MFA.
+
+  - id: VCO-MGMT-008
+    generic_id: MGMT-008
+    title: "Dormant user accounts must be reviewed and removed"
+    severity: medium
+    cis:
+      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "MGMT-DormantAccounts", level: 1}
+    probe:
+      type: manual
+      reason: >
+        Dormant account detection requires querying user last-login timestamps
+        in the Orchestrator UI or API.
+    remediation: >
+      Administration > User Management > Users: identify accounts with no recent
+      login and disable or remove them.
+
+  # ── [Isolation] ───────────────────────────────────────────────────────────
+
+  - id: VCO-ISO-001
+    generic_id: ISO-001
+    title: "Tenant separation must be enforced in multi-tenant deployments"
+    severity: critical
+    cis:
+      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "ISO-TenantSeparation", level: 1}
+    probe:
+      type: manual
+      reason: >
+        Tenant separation in multi-tenant Orchestrator deployments requires
+        operator-level review of enterprise isolation configuration.
+    remediation: >
+      Verify that each tenant (enterprise) has its own isolated VPN overlay
+      and that shared Orchestrator resources do not leak cross-tenant data.
+
+  - id: VCO-ISO-002
+    generic_id: ISO-002
+    title: "Shared resources between segments must be documented and justified"
+    severity: high
+    cis:
+      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "ISO-SharedResources", level: 1}
+    probe:
+      type: manual
+      reason: >
+        Shared resource identification requires review of segment configuration
+        and cross-segment forwarding rules.
+    remediation: >
+      Document any shared LAN resources accessible across segments and restrict
+      access to the minimum required scope.
+
+  - id: VCO-ISO-003
+    generic_id: ISO-003
+    title: "Profile inheritance must be reviewed to prevent inadvertent permission escalation"
+    severity: medium
+    cis:
+      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "ISO-ProfileInheritance", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: >
+        Profile inheritance review requires comparing profileConfig with
+        edgeConfig to identify where edge overrides weaken the inherited security
+        posture. velo_collector.py's analyse_segmentation and
+        analyse_structural_diff functions perform this evaluation.
+    remediation: >
+      Review all edge-level deviations from the profile baseline and ensure no
+      override reduces security controls below the profile standard.
+
+  - id: VCO-ISO-004
+    generic_id: ISO-004
+    title: "Wireless security settings on edges must meet organisational policy"
+    severity: medium
+    cis:
+      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "ISO-WirelessSecurity", level: 1}
+    probe:
+      type: manual
+      reason: >
+        Wireless security configuration (SSID, WPA3, VLAN assignment) requires
+        review in the Orchestrator UI under Configure > Edges > WiFi.
+    remediation: >
+      Configure > Edges > WiFi: enforce WPA3-Enterprise, disable open SSIDs,
+      and assign each SSID to an isolated network segment.

@@ -27,8 +27,10 @@ _LOADERS: dict[str, str] = {
     "sonicwall":   "fluff.parsers.sonicwall",
     "nokia_sros":  "fluff.parsers.nokia_sros",
     "nokia_srl":   "fluff.parsers.nokia_srl",
-    "huawei_vrp":  "fluff.parsers.huawei_vrp",
-    "f5_bigip":    "fluff.parsers.f5_bigip",
+    "huawei_vrp":      "fluff.parsers.huawei_vrp",
+    "f5_bigip":        "fluff.parsers.f5_bigip",
+    "vmware_velocloud": "fluff.parsers.vmware_velocloud",
+    "vmware_nsx":      "fluff.parsers.vmware_nsx",
 }
 
 

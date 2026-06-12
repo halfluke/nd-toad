@@ -1,0 +1,139 @@
+{
+  "edgeName": "EDGE-BRANCH-01",
+  "edgeLogicalId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+  "profileName": "Branch-Security-Profile",
+  "profileLogicalId": "11111111-2222-3333-4444-555555555555",
+  "profileNumericId": "42",
+  "softwareVersion": "5.4.0.0-R5420-20240101",
+  "modelNumber": "edge520",
+  "activationState": "ACTIVATED",
+  "profileConfig": {
+    "ntp": {
+      "enabled": true,
+      "servers": [
+        {"ip": "10.0.0.1", "name": "ntp1.example.com"},
+        {"ip": "10.0.0.2", "name": "ntp2.example.com"}
+      ]
+    },
+    "dns": {
+      "primaryDns": "10.1.1.1",
+      "secondaryDns": "10.1.1.2"
+    },
+    "snmp": {
+      "enabled": true,
+      "snmpv2c": {"enabled": false},
+      "snmpv3": {
+        "enabled": true,
+        "authUser": "snmpv3user",
+        "authProtocol": "SHA",
+        "privProtocol": "AES128"
+      }
+    },
+    "tacacs": {
+      "serverIp": "10.2.0.1",
+      "sharedSecret": "redacted",
+      "timeout": 5
+    },
+    "bfd": {
+      "enabled": true,
+      "txInterval": 300,
+      "rxInterval": 300,
+      "multiplier": 3
+    },
+    "routedInterfaces": [
+      {
+        "name": "GE1",
+        "disabled": false,
+        "wanOverlay": "AUTO_DISCOVERED",
+        "encryptOverlay": true
+      },
+      {
+        "name": "GE2",
+        "disabled": false,
+        "wanOverlay": "AUTO_DISCOVERED",
+        "encryptOverlay": true
+      }
+    ],
+    "segments": [
+      {
+        "name": "Global Segment",
+        "segmentId": 0,
+        "syslog": {
+          "enabled": true,
+          "collectors": [
+            {"host": "siem.example.com", "port": 514, "protocol": "UDP"}
+          ]
+        }
+      }
+    ]
+  },
+  "profileFirewall": {
+    "stateful_firewall_enabled": true,
+    "firewall_logging_enabled": true,
+    "syslog_forwarding": true,
+    "services": {
+      "ssh": {"enabled": false},
+      "console": {"enabled": false},
+      "usb": {"disabled": true},
+      "snmp": {"enabled": false}
+    }
+  },
+  "edgeConfig": {
+    "ha": {
+      "enabled": true,
+      "mode": "ACTIVE_STANDBY"
+    }
+  },
+  "firewallConfig": {
+    "stateful_firewall_enabled": true,
+    "firewall_logging_enabled": true,
+    "syslog_forwarding": true,
+    "services": {
+      "ssh": {
+        "enabled": false,
+        "allowSelectedIp": []
+      },
+      "console": {"enabled": false},
+      "usb": {"disabled": true},
+      "snmp": {"enabled": false}
+    },
+    "segments": [
+      {
+        "segment": {"name": "Global Segment", "segmentId": 0},
+        "rules": [
+          {
+            "action": "ALLOW",
+            "match": {"daddr": "192.168.1.0/24", "saddr": "10.0.0.0/8"}
+          },
+          {
+            "action": "DENY",
+            "match": {"daddr": "any", "saddr": "any"}
+          }
+        ]
+      }
+    ]
+  },
+  "wanConfig": {
+    "links": [
+      {
+        "name": "WAN-1",
+        "internalId": "wan-link-1",
+        "encryptOverlay": true
+      },
+      {
+        "name": "WAN-2",
+        "internalId": "wan-link-2",
+        "encryptOverlay": true
+      }
+    ]
+  },
+  "controlPlaneConfig": {
+    "segments": [
+      {
+        "segmentId": 0,
+        "vpnEnabled": true,
+        "encryptionProfile": "AES256GCM"
+      }
+    ]
+  }
+}

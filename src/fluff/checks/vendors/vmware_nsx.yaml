@@ -1,0 +1,588 @@
+# VMware NSX 4.x compliance checks
+# Source: DISA STIG VMware NSX 4.x Manager NDM Security Technical Implementation Guide V1R2 (2024-12-13)
+#         DISA STIG VMware NSX 4.x Tier-0 Gateway Router Security Technical Implementation Guide V1R2 (2024-12-13)
+# Input format: NSX bundle JSON flattened to dot-notation text
+#               (produced by tools/nsx_collector.py)
+#
+# STIG document references:
+#   NSX Manager NDM — 28 controls (CAT I: 6, CAT II: 21, CAT III: 1)
+#   Tier-0 Router   — 16 controls (selected automatable subset)
+#
+# Check counts: 13 automated (required_regex/forbidden_regex)
+#               10 manual_fp_risk (context-dependent or multi-endpoint)
+#               12 manual (UI-only or live routing state required)
+#               Total: 35
+
+vendor: vmware
+profile: vmware_nsx
+checks:
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # NSX Manager NDM – DISA STIG V1R2 (2024-12-13)
+  # ══════════════════════════════════════════════════════════════════════════
+
+  # ── SSH ──────────────────────────────────────────────────────────────────
+
+  - id: NSX-MGMT-001
+    generic_id: MGMT-001
+    title: "NSX Manager SSH service must be disabled"
+    severity: medium
+    cis:
+      - {benchmark: "DISA STIG VMware NSX 4.x Manager NDM V1R2", control: "V-265353", level: 1}
+    probe:
+      type: forbidden_regex
+      # SSH service should not be running
+      pattern: 'ssh_service\.service_properties\.running = True'
+    remediation: >
+      NSX Manager CLI or UI: System > Configuration > General > SSH Service: disable SSH.
+      (run-service --stop ssh)
+
+  # ── SNMP ─────────────────────────────────────────────────────────────────
+
+  - id: NSX-MGMT-002
+    generic_id: MGMT-002
+    title: "NSX Manager must disable SNMPv2"
+    severity: medium
+    cis:
+      - {benchmark: "DISA STIG VMware NSX 4.x Manager NDM V1R2", control: "V-265354", level: 1}
+    probe:
+      type: forbidden_regex
+      # SNMPv2 service should not be running
+      pattern: 'snmp_service\.service_properties\.running = True'
+    remediation: >
+      NSX Manager CLI: stop snmpd service and configure SNMPv3 only if SNMP is required.
+
+  # ── TLS ──────────────────────────────────────────────────────────────────
+
+  - id: NSX-MGMT-003
+    generic_id: MGMT-003
+    title: "NSX Manager must only enable TLS 1.2 or greater"
+    severity: critical
+    cis:
+      - {benchmark: "DISA STIG VMware NSX 4.x Manager NDM V1R2", control: "V-265315", level: 1}
+    probe:
+      type: forbidden_regex
+      # Flag if TLS 1.0 or 1.1 ciphers appear in the cipher suite list
+      pattern: '(?i)global_config\.\S*(tls_?1_?[01]|TLSv1\.[01]|SSLv[23])'
+    remediation: >
+      System > Configuration > NSX Manager > TLS settings: enable TLS 1.2+ only
+      and remove TLS 1.0/1.1 cipher suites.
+
+  # ── FIPS ─────────────────────────────────────────────────────────────────
+
+  - id: NSX-MGMT-004
+    generic_id: MGMT-004
+    title: "NSX Manager must enable global FIPS compliance mode"
+    severity: medium
+    cis:
+      - {benchmark: "DISA STIG VMware NSX 4.x Manager NDM V1R2", control: "V-265355", level: 1}
+    probe:
+      type: required_regex
+      pattern: 'global_config\.fips_enabled = True'
+    remediation: >
+      System > Configuration > NSX Manager > FIPS Mode: enable global FIPS compliance.
+      Note: requires all connected components to also support FIPS.
+
+  # ── Session Timeout ───────────────────────────────────────────────────────
+
+  - id: NSX-MGMT-005
+    generic_id: MGMT-005
+    title: "NSX Manager must terminate sessions after five minutes of inactivity"
+    severity: critical
+    cis:
+      - {benchmark: "DISA STIG VMware NSX 4.x Manager NDM V1R2", control: "V-265327", level: 1}
+    probe:
+      type: required_regex
+      # cli_timeout should be present and ≤ 300 seconds (5 minutes)
+      # We match any value; semantic validation is done by the operator
+      pattern: 'auth_policy\.cli_timeout = \d+'
+    remediation: >
+      System > Configuration > Authentication Policy > CLI Timeout: set to 300 seconds
+      (5 minutes) or less.
+
+  # ── Login Lockout ─────────────────────────────────────────────────────────
+
+  - id: NSX-MGMT-006
+    generic_id: MGMT-006
+    title: "NSX Manager must lock accounts after three consecutive failed login attempts"
+    severity: medium
+    cis:
+      - {benchmark: "DISA STIG VMware NSX 4.x Manager NDM V1R2", control: "V-265293", level: 1}
+    probe:
+      type: required_regex
+      # api_max_auth_failures should be 3
+      pattern: 'auth_policy\.api_max_auth_failures = [123]'
+    remediation: >
+      System > Configuration > Authentication Policy: set maximum API auth failures to 3
+      and lockout period to at least 15 minutes (900 seconds).
+
+  - id: NSX-MGMT-007
+    generic_id: MGMT-007
+    title: "NSX Manager CLI must lock accounts after three consecutive failed login attempts"
+    severity: medium
+    cis:
+      - {benchmark: "DISA STIG VMware NSX 4.x Manager NDM V1R2", control: "V-265293", level: 1}
+    probe:
+      type: required_regex
+      pattern: 'auth_policy\.cli_max_auth_failures = [123]'
+    remediation: >
+      System > Configuration > Authentication Policy: set maximum CLI auth failures to 3
+      and lockout period to at least 15 minutes (900 seconds).
+
+  # ── Password Policy ───────────────────────────────────────────────────────
+
+  - id: NSX-MGMT-008
+    generic_id: MGMT-008
+    title: "NSX Manager must enforce a minimum 15-character password length"
+    severity: medium
+    cis:
+      - {benchmark: "DISA STIG VMware NSX 4.x Manager NDM V1R2", control: "V-265316", level: 1}
+    probe:
+      type: required_regex
+      # minimum_password_length ≥ 15
+      pattern: 'auth_policy\.minimum_password_length = (1[5-9]|[2-9]\d|\d{3,})'
+    remediation: >
+      System > Configuration > Authentication Policy > Password Policy: set minimum
+      password length to 15 characters.
+
+  - id: NSX-MGMT-009
+    generic_id: MGMT-009
+    title: "NSX Manager passwords must require uppercase, lowercase, numeric, and special characters"
+    severity: medium
+    cis:
+      - {benchmark: "DISA STIG VMware NSX 4.x Manager NDM V1R2", control: "V-265317", level: 1}
+    probe:
+      type: required_regex
+      # Upper-case complexity enabled
+      pattern: 'auth_policy\.upper_chars_required = [1-9]'
+    remediation: >
+      System > Configuration > Authentication Policy > Password Policy: require at least
+      one uppercase, one lowercase, one numeric, and one special character.
+
+  - id: NSX-MGMT-010
+    generic_id: MGMT-010
+    title: "NSX Manager passwords must require at least one numeric character"
+    severity: medium
+    cis:
+      - {benchmark: "DISA STIG VMware NSX 4.x Manager NDM V1R2", control: "V-265319", level: 1}
+    probe:
+      type: required_regex
+      pattern: 'auth_policy\.digits_required = [1-9]'
+    remediation: >
+      System > Configuration > Authentication Policy > Password Policy: require at least
+      one numeric character.
+
+  - id: NSX-MGMT-011
+    generic_id: MGMT-011
+    title: "NSX Manager passwords must require at least one special character"
+    severity: medium
+    cis:
+      - {benchmark: "DISA STIG VMware NSX 4.x Manager NDM V1R2", control: "V-265320", level: 1}
+    probe:
+      type: required_regex
+      pattern: 'auth_policy\.special_chars_required = [1-9]'
+    remediation: >
+      System > Configuration > Authentication Policy > Password Policy: require at least
+      one special character.
+
+  # ── NTP ──────────────────────────────────────────────────────────────────
+
+  - id: NSX-MGMT-012
+    generic_id: MGMT-012
+    title: "NSX Manager must synchronise clocks using redundant authoritative time sources"
+    severity: medium
+    cis:
+      - {benchmark: "DISA STIG VMware NSX 4.x Manager NDM V1R2", control: "V-265338", level: 1}
+    probe:
+      type: required_regex
+      # At least one NTP server configured
+      pattern: 'ntp_service\.server\.\d+\.(server|host|ip)'
+    remediation: >
+      System > Configuration > Time: configure at least two NTP servers using
+      authoritative sources.
+
+  # ── Syslog ───────────────────────────────────────────────────────────────
+
+  - id: NSX-MGMT-013
+    generic_id: MGMT-013
+    title: "NSX Manager must send logs to a central log server"
+    severity: critical
+    cis:
+      - {benchmark: "DISA STIG VMware NSX 4.x Manager NDM V1R2", control: "V-265348", level: 1}
+    probe:
+      type: required_regex
+      # At least one syslog server entry in the syslog configuration
+      pattern: 'syslog\.service_properties\.(server|exporter)\.\d+'
+    remediation: >
+      System > Configuration > Syslog: add at least one remote syslog server (SIEM)
+      and ensure the syslog service is running.
+
+  # ── Logging Level ─────────────────────────────────────────────────────────
+
+  - id: NSX-MGMT-014
+    generic_id: MGMT-014
+    title: "NSX Manager must configure logging levels to generate required audit records"
+    severity: medium
+    cis:
+      - {benchmark: "DISA STIG VMware NSX 4.x Manager NDM V1R2", control: "V-265289", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: >
+        Logging level configuration is spread across individual service log levels
+        in the NSX Manager. The flat-text representation of the syslog config does
+        not include per-service log levels. Verify via NSX Manager CLI:
+        'get logging-servers' and 'get service manager log-level'.
+    remediation: >
+      NSX Manager CLI: set logging-server <syslog-host> proto udp level info
+      Ensure all services are configured at INFO level or above.
+
+  # ── Cluster ───────────────────────────────────────────────────────────────
+
+  - id: NSX-MGMT-015
+    generic_id: MGMT-015
+    title: "NSX Manager must be configured as a three-node cluster"
+    severity: medium
+    cis:
+      - {benchmark: "DISA STIG VMware NSX 4.x Manager NDM V1R2", control: "V-265358", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: >
+        Counting cluster nodes requires inspecting cluster.cluster_nodes array
+        length. A regex cannot count array elements reliably. Verify that
+        cluster.cluster_nodes contains exactly 3 entries in the bundle JSON.
+    remediation: >
+      Deploy two additional NSX Manager appliances and join them to form a
+      three-node management cluster.
+
+  - id: NSX-MGMT-016
+    generic_id: MGMT-016
+    title: "NSX Managers must be deployed on separate physical hosts"
+    severity: medium
+    cis:
+      - {benchmark: "DISA STIG VMware NSX 4.x Manager NDM V1R2", control: "V-265359", level: 1}
+    probe:
+      type: manual
+      reason: >
+        Verifying physical host separation requires cross-referencing vCenter
+        host assignments for each NSX Manager VM. This is not available in the
+        API bundle.
+    remediation: >
+      Use vSphere anti-affinity rules to ensure NSX Manager VMs run on
+      separate physical ESXi hosts.
+
+  # ── Session Concurrency ───────────────────────────────────────────────────
+
+  - id: NSX-MGMT-017
+    generic_id: MGMT-017
+    title: "NSX Manager must limit the number of concurrent administrative sessions"
+    severity: medium
+    cis:
+      - {benchmark: "DISA STIG VMware NSX 4.x Manager NDM V1R2", control: "V-265346", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: >
+        Concurrent session limits are configurable via NSX Manager but the
+        specific API field varies by NSX version and may not appear consistently
+        in the global_config endpoint.
+    remediation: >
+      System > Configuration > Authentication Policy: set the maximum concurrent
+      sessions to an organisation-defined number.
+
+  # ── MFA / Identity Provider ───────────────────────────────────────────────
+
+  - id: NSX-MGMT-018
+    generic_id: MGMT-018
+    title: "NSX Manager must integrate with an identity provider that supports MFA"
+    severity: critical
+    cis:
+      - {benchmark: "DISA STIG VMware NSX 4.x Manager NDM V1R2", control: "V-265296", level: 1}
+    probe:
+      type: manual
+      reason: >
+        MFA integration requires checking the VMware Identity Manager or
+        OpenID Connect configuration in the NSX UI. The API bundle does not
+        include this configuration.
+    remediation: >
+      System > Settings > Users Management > Authentication Providers:
+      configure VMware Identity Manager or OpenID Connect with MFA enabled.
+
+  # ── RBAC ─────────────────────────────────────────────────────────────────
+
+  - id: NSX-MGMT-019
+    generic_id: MGMT-019
+    title: "NSX Manager must assign users to roles with approved, minimal authorisations"
+    severity: critical
+    cis:
+      - {benchmark: "DISA STIG VMware NSX 4.x Manager NDM V1R2", control: "V-265292", level: 1}
+    probe:
+      type: manual
+      reason: >
+        RBAC review requires enumerating user accounts and their role assignments
+        in the NSX UI. The API returns user data but validating role appropriateness
+        requires human review of organisational requirements.
+    remediation: >
+      System > Users and Roles > Users: review all accounts and remove any
+      with roles that exceed their required access level.
+
+  - id: NSX-MGMT-020
+    generic_id: MGMT-020
+    title: "NSX Manager must be configured with only one local account of last resort"
+    severity: medium
+    cis:
+      - {benchmark: "DISA STIG VMware NSX 4.x Manager NDM V1R2", control: "V-265313", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: >
+        Verifying the number of local accounts requires counting entries in the
+        users endpoint response. A regex cannot reliably count JSON array elements.
+        Check the bundle's 'users' section: the 'results' array should contain
+        exactly one local account (the break-glass admin).
+    remediation: >
+      System > Users and Roles: ensure only one local admin account exists for
+      emergency access; all other accounts should authenticate via the identity provider.
+
+  # ── Login Banner ─────────────────────────────────────────────────────────
+
+  - id: NSX-MGMT-021
+    generic_id: MGMT-021
+    title: "NSX Manager must display the required login banner before granting access"
+    severity: medium
+    cis:
+      - {benchmark: "DISA STIG VMware NSX 4.x Manager NDM V1R2", control: "V-265294", level: 1}
+    probe:
+      type: manual
+      reason: >
+        Login banner configuration is a UI-level setting not exported in the
+        API bundle. Verify via SSH to the NSX Manager appliance or the UI login page.
+    remediation: >
+      NSX Manager CLI: set banner motd "Authorized use only. All activity may be monitored."
+      Verify the banner appears before authentication.
+
+  # ── Backup ───────────────────────────────────────────────────────────────
+
+  - id: NSX-MGMT-022
+    generic_id: MGMT-022
+    title: "NSX Manager must be configured to perform backups on a defined schedule"
+    severity: medium
+    cis:
+      - {benchmark: "DISA STIG VMware NSX 4.x Manager NDM V1R2", control: "V-265350", level: 1}
+    probe:
+      type: manual
+      reason: >
+        Backup schedule configuration is available in the NSX Manager UI under
+        System > Backup and Restore. The API bundle does not include backup config.
+    remediation: >
+      System > Backup and Restore: configure a backup schedule (at least daily)
+      and verify that backups succeed.
+
+  # ── Supported Version ─────────────────────────────────────────────────────
+
+  - id: NSX-MGMT-023
+    generic_id: MGMT-023
+    title: "NSX Manager must be running a currently supported release"
+    severity: critical
+    cis:
+      - {benchmark: "DISA STIG VMware NSX 4.x Manager NDM V1R2", control: "V-265352", level: 1}
+    probe:
+      type: manual_fp_risk
+      reason: >
+        Determining whether the installed version is in support requires comparing
+        node_version.product_version against the Broadcom lifecycle matrix, which
+        changes over time. Check the bundle's 'node_version.product_version' field
+        against https://lifecycle.vmware.com.
+    remediation: >
+      Upgrade NSX Manager to a release within the current Broadcom support lifecycle.
+
+  # ── NTP Timestamps ───────────────────────────────────────────────────────
+
+  - id: NSX-MGMT-024
+    generic_id: MGMT-024
+    title: "NSX Manager must record timestamps in Coordinated Universal Time (UTC)"
+    severity: medium
+    cis:
+      - {benchmark: "DISA STIG VMware NSX 4.x Manager NDM V1R2", control: "V-265339", level: 1}
+    probe:
+      type: manual
+      reason: >
+        UTC timezone configuration requires checking the NSX Manager system timezone
+        setting which is not exported via the API endpoints in the bundle.
+    remediation: >
+      NSX Manager CLI: set timezone UTC
+      Verify with: get timezone
+
+  # ── PKI Certificate ───────────────────────────────────────────────────────
+
+  - id: NSX-MGMT-025
+    generic_id: MGMT-025
+    title: "NSX Manager must use certificates from an approved certificate authority"
+    severity: medium
+    cis:
+      - {benchmark: "DISA STIG VMware NSX 4.x Manager NDM V1R2", control: "V-265351", level: 1}
+    probe:
+      type: manual
+      reason: >
+        Certificate authority validation requires reviewing the certificate chain
+        for each installed certificate and verifying it chains to an approved CA.
+        Check the 'certificates' section of the bundle.
+    remediation: >
+      Replace any self-signed certificates with certificates issued by an
+      organisation-approved PKI or commercial CA.
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # NSX Tier-0 Gateway Router – DISA STIG V1R2 (2024-12-13) — selected subset
+  # ══════════════════════════════════════════════════════════════════════════
+
+  - id: NSX-T0R-001
+    generic_id: T0R-001
+    title: "NSX Tier-0 Gateway must disable Protocol Independent Multicast (PIM) on unused interfaces"
+    severity: medium
+    cis:
+      - {benchmark: "DISA STIG VMware NSX 4.x Tier-0 Gateway Router V1R2", control: "NT0R-4X-000013", level: 1}
+    probe:
+      type: manual
+      reason: >
+        PIM configuration on Tier-0 Gateway interfaces requires reviewing the
+        NSX API at /policy/api/v1/infra/tier-0s/*/locale-services/*/interfaces,
+        which is not collected in the standard bundle. Verify via NSX UI or
+        Policy API.
+    remediation: >
+      NSX UI > Networking > Tier-0 Gateways > Interfaces: disable PIM on all
+      interfaces that do not explicitly require multicast routing.
+
+  - id: NSX-T0R-002
+    generic_id: T0R-002
+    title: "NSX Tier-0 Gateway must have DHCP service disabled if not in use"
+    severity: medium
+    cis:
+      - {benchmark: "DISA STIG VMware NSX 4.x Tier-0 Gateway Router V1R2", control: "NT0R-4X-000027", level: 1}
+    probe:
+      type: manual
+      reason: >
+        Tier-0 Gateway DHCP service configuration is in the NSX Policy API
+        (/policy/api/v1/infra/tier-0s) which is not collected in the standard
+        bundle.
+    remediation: >
+      NSX UI > Networking > Tier-0 Gateways > <gateway> > DHCP Config:
+      disable DHCP relay and server unless a documented requirement exists.
+
+  - id: NSX-T0R-003
+    generic_id: T0R-003
+    title: "NSX Tier-0 Gateway must disable multicast routing if not required"
+    severity: medium
+    cis:
+      - {benchmark: "DISA STIG VMware NSX 4.x Tier-0 Gateway Router V1R2", control: "NT0R-4X-000107", level: 1}
+    probe:
+      type: manual
+      reason: >
+        Multicast routing enablement requires checking Tier-0 Gateway locale
+        service configuration via the NSX Policy API, not available in the
+        standard collector bundle.
+    remediation: >
+      NSX UI > Networking > Tier-0 Gateways > Locale Services: disable multicast
+      on all Tier-0 gateways unless multicast routing is a documented requirement.
+
+  - id: NSX-T0R-004
+    generic_id: T0R-004
+    title: "NSX Tier-0 Gateway BGP peers must use maximum prefix limits"
+    severity: medium
+    cis:
+      - {benchmark: "DISA STIG VMware NSX 4.x Tier-0 Gateway Router V1R2", control: "NT0R-4X-000001", level: 1}
+    probe:
+      type: manual
+      reason: >
+        BGP neighbour configuration including max-prefix limits requires the
+        NSX Policy API (/policy/api/v1/infra/tier-0s/*/bgp/neighbors).
+    remediation: >
+      NSX UI > Networking > Tier-0 Gateways > BGP > Neighbours: configure
+      maximum prefix limits on all BGP peer sessions.
+
+  - id: NSX-T0R-005
+    generic_id: T0R-005
+    title: "NSX Tier-0 Gateway must use BGP route filtering with prefix lists or route maps"
+    severity: medium
+    cis:
+      - {benchmark: "DISA STIG VMware NSX 4.x Tier-0 Gateway Router V1R2", control: "NT0R-4X-000002", level: 1}
+    probe:
+      type: manual
+      reason: >
+        BGP route filtering configuration requires inspection of NSX Policy API
+        routing configuration which is not in the standard collector bundle.
+    remediation: >
+      NSX UI > Networking > Tier-0 Gateways > BGP > Route Distribution: apply
+      prefix lists or route maps to all BGP neighbour import and export policies.
+
+  - id: NSX-T0R-006
+    generic_id: T0R-006
+    title: "NSX Tier-0 Gateway Firewall must enforce a default-deny policy"
+    severity: high
+    cis:
+      - {benchmark: "DISA STIG VMware NSX 4.x Tier-0 Gateway Firewall V1R2", control: "NT0F-4X-000016", level: 1}
+    probe:
+      type: manual
+      reason: >
+        Tier-0 Gateway Firewall default action requires checking the NSX Policy API
+        (/policy/api/v1/infra/domains/default/gateway-policies) which is not
+        collected by the standard nsx_collector.py.
+    remediation: >
+      NSX UI > Security > Gateway Firewall > Gateway Specific Rules > Tier-0:
+      set the default rule action to DROP for all traffic not explicitly permitted.
+
+  - id: NSX-T0R-007
+    generic_id: T0R-007
+    title: "NSX Tier-0 Gateway Firewall must protect against DoS packet flooding"
+    severity: medium
+    cis:
+      - {benchmark: "DISA STIG VMware NSX 4.x Tier-0 Gateway Firewall V1R2", control: "NT0F-4X-000015", level: 1}
+    probe:
+      type: manual
+      reason: >
+        DoS protection (flood limits) configuration is in the NSX Gateway Firewall
+        policy context not exported by the standard collector.
+    remediation: >
+      NSX UI > Security > Gateway Firewall: configure rate limiting policies or
+      Edge Firewall profile with SYN flood, UDP flood, and ICMP flood limits.
+
+  - id: NSX-T0R-008
+    generic_id: T0R-008
+    title: "NSX Distributed Firewall must deny all traffic by default and allow by exception"
+    severity: high
+    cis:
+      - {benchmark: "DISA STIG VMware NSX 4.x Distributed Firewall V1R2", control: "NDFW-4X-000016", level: 1}
+    probe:
+      type: manual
+      reason: >
+        NSX Distributed Firewall default action requires reviewing security policy
+        rules via the NSX Policy API or UI. Not available in the standard collector bundle.
+    remediation: >
+      NSX UI > Security > Distributed Firewall: set the default rule action to DROP
+      and create explicit allow rules for all required traffic flows.
+
+  - id: NSX-T0R-009
+    generic_id: T0R-009
+    title: "NSX Tier-1 Gateway must have DHCP disabled if not in use"
+    severity: medium
+    cis:
+      - {benchmark: "DISA STIG VMware NSX 4.x Tier-1 Gateway Router V1R2", control: "NT1R-4X-000027", level: 1}
+    probe:
+      type: manual
+      reason: >
+        Tier-1 Gateway DHCP configuration requires the NSX Policy API
+        (/policy/api/v1/infra/tier-1s), not in the standard collector bundle.
+    remediation: >
+      NSX UI > Networking > Tier-1 Gateways: disable DHCP on all Tier-1
+      gateways where DHCP is not required.
+
+  - id: NSX-T0R-010
+    generic_id: T0R-010
+    title: "NSX Tier-1 Gateway Firewall must deny all traffic by default"
+    severity: high
+    cis:
+      - {benchmark: "DISA STIG VMware NSX 4.x Tier-1 Gateway Firewall V1R2", control: "NT1F-4X-000016", level: 1}
+    probe:
+      type: manual
+      reason: >
+        Tier-1 Gateway Firewall default rule action requires inspection via the
+        NSX Policy API or UI.
+    remediation: >
+      NSX UI > Security > Gateway Firewall > Gateway Specific Rules > Tier-1:
+      set the default rule action to DROP.

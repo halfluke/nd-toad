@@ -10,7 +10,7 @@
 
 # ND-TOAD — Network Device Toad Auditing Tool
 
-Offline network device configuration security auditor with **CIS Level 1 mapping** across 18 vendor/platform profiles.
+Offline network device configuration security auditor with **CIS Level 1 mapping** across 20 vendor/platform profiles.
 
 ND-TOAD reads static config files — no live device access, no API keys, no agents — and produces structured security findings mapped to CIS benchmark controls. Each finding has a `pass / fail / manual / not_applicable` status, severity, evidence (the offending config lines), and remediation guidance.
 
@@ -38,12 +38,15 @@ ND-TOAD reads static config files — no live device access, no API keys, no age
 | `nokia_srl` | Nokia | 15 | JSON export **or** flat CLI set format (`info flat`) | [Nokia SR Linux Security — Configuration Basics Guide](https://documentation.nokia.com/srlinux/22-6/SR_Linux_Book_Files/Configuration_Basics_Guide/configb-security.html) ¹ |
 | `huawei_vrp` | Huawei | 37 | `display current-configuration` plain text | [Huawei VRP Security Hardening Guide](https://support.huawei.com/enterprise/en/doc/EDOC1100278601) ¹ |
 | `f5_bigip` | F5 | 28 | TMSH SCF export (`tmsh save /sys config`) | [CIS F5 BIG-IP LTM 12 v1.0.0](https://www.cisecurity.org/benchmark/f5) |
+| `vmware_velocloud` | VMware | 49 | Combined edge JSON from `tools/velo_collector.py` ² | [VMware SD-WAN Security Configuration Guide](https://techdocs.broadcom.com/us/en/vmware-cis/sd-wan.html) ¹ |
+| `vmware_nsx` | VMware | 35 | NSX bundle JSON from `tools/nsx_collector.py` ² | [DISA STIG VMware NSX 4.x Manager NDM V1R2 (2024-12-13)](https://public.cyber.mil/stigs/downloads/) ¹ |
 
 > ¹ No dedicated CIS benchmark available for this platform. Checks are based on the linked official vendor hardening documentation and DISA STIG guidance.
+> ² These profiles require a **collector script** to be run against a live environment first. See [Collector tools](#collector-tools-for-api-first-platforms) below.
 >
-> Benchmark versions shown were the latest available in **May 2026**. CIS publishes updates monthly — visit the linked page before each audit to confirm you are working from the current version. PDFs are freely downloadable **without registration** from [downloads.cisecurity.org](https://downloads.cisecurity.org/#/).
+> Benchmark versions shown were the latest available in **June 2026**. CIS publishes updates monthly — visit the linked page before each audit to confirm you are working from the current version. PDFs are freely downloadable **without registration** from [downloads.cisecurity.org](https://downloads.cisecurity.org/#/).
 
-**627 security checks** across all 18 profiles — 555 automated probes + 22 manual entries + 50 manual (fp-risk) entries. CIS L1 controls that cannot be reliably automated from a static config file without a high risk of false positives are emitted as `status: manual [fp risk]` for human review.
+**711 security checks** across all 20 profiles — 591 automated probes + 38 manual entries + 82 manual (fp-risk) entries. CIS L1 controls that cannot be reliably automated from a static config file without a high risk of false positives are emitted as `status: manual [fp risk]` for human review.
 
 ---
 
@@ -216,6 +219,85 @@ This section explains precisely **which export or copy-paste format** each vendo
 | `nokia_srl` | `.json` `.txt` | `info flat \| as json` | — |
 | `huawei_vrp` | `.txt` `.conf` | `display current-configuration` | — |
 | `f5_bigip` | `.txt` `.conf` `.scf` | `tmsh save /sys config` → SCF archive | **No** — UCS archive (`.ucs`) not parsed |
+| `vmware_velocloud` | `.json` | `tools/velo_collector.py` → `combined/<edge>_combined.json` | — (JSON is plaintext) |
+| `vmware_nsx` | `.json` | `tools/nsx_collector.py` → `nsx_bundle.json` | — (JSON is plaintext) |
+
+---
+
+## Collector tools for API-first platforms
+
+VeloCloud and NSX do not expose their configuration as a CLI text file. Instead, you first run a **collector script** that calls the vendor API and saves the result as a JSON file. nd-toad then audits that JSON file offline.
+
+### VMware VeloCloud SD-WAN — `tools/velo_collector.py`
+
+`velo_collector.py` connects to a VeloCloud Orchestrator (VCO) and exports the per-edge combined configuration JSON files used by nd-toad. It also performs its own security analysis (firewall rules, segment isolation, encryption, etc.) and writes a full findings report.
+
+```bash
+# Set environment variables
+export VCO_HOSTNAME=vco.example.velocloud.net
+export VCO_TOKEN='your-api-token'
+export VCO_ENTERPRISE_LOGICAL_ID='xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
+export VCO_ENTERPRISE_NUMERIC_ID='1234'
+
+# Optional — scope to specific edges only
+export VCO_SCOPE_EDGES='BRANCH-01,BRANCH-02'
+
+# Run the collector (outputs to vco_output/<timestamp>/)
+python3 tools/velo_collector.py
+
+# Then audit each edge with nd-toad
+nd-toad audit --vendor vmware_velocloud \
+    vco_output/<timestamp>/combined/BRANCH-01_combined.json
+
+# Or batch all edges at once
+nd-toad audit --vendor vmware_velocloud \
+    --dir vco_output/<timestamp>/combined/
+
+# Deep mode: also collect route table and gateway assignments
+python3 tools/velo_collector.py --deep
+
+# Enterprise events (config change audit trail)
+python3 tools/velo_collector.py --events
+```
+
+**Required permissions:** The API token must belong to a user with at least read-only access to the enterprise and edge configuration APIs. Do not use the token of an account with operator-level privileges.
+
+**Output layout:**
+```
+vco_output/<timestamp>/
+  combined/<edgeName>_combined.json  ← input for nd-toad
+  findings/findings.json             ← velo_collector's own findings
+  findings/methodology_coverage.csv  ← XLSX methodology mapping
+  findings/manual_review_checklist.json
+```
+
+### VMware NSX 4.x — `tools/nsx_collector.py`
+
+`nsx_collector.py` connects to an NSX Manager REST API and dumps key configuration endpoints (SSH, NTP, cluster, auth policy, SNMP, FIPS, syslog, etc.) into a single `nsx_bundle.json` file for offline audit by nd-toad.
+
+```bash
+# Set environment variables
+export NSX_HOSTNAME=nsx01.example.com
+export NSX_USERNAME=admin
+export NSX_PASSWORD='your-password'
+
+# Optional
+export NSX_VERIFY_TLS=true   # default: false (self-signed certs common)
+export NSX_OUTPUT=nsx_bundle.json
+
+# Run the collector
+python3 tools/nsx_collector.py
+
+# Then audit with nd-toad
+nd-toad audit --vendor vmware_nsx nsx_bundle.json
+
+# Save JSON report
+nd-toad audit --vendor vmware_nsx nsx_bundle.json --output nsx_report.json
+```
+
+**Required permissions:** The NSX_USERNAME must have read access to the node, cluster, and authentication policy APIs. An `audit` or `read-only` NSX role is sufficient. Do not use the built-in `admin` account for routine collection.
+
+**Note on NSX policy-level checks:** Many NSX STIG controls (Gateway Firewall rules, Tier-0 routing config, Distributed Firewall policy) require the NSX Policy API (`/policy/api/v1/infra/…`) which is scoped to specific gateway or tenant contexts. These are not collected by the standard bundle and are marked `status: manual` in the audit output. Consider extending `nsx_collector.py` with policy-level endpoints for your specific deployment.
 
 ---
 
@@ -864,6 +946,15 @@ Search for "Arista" in the DISA STIG downloads library.
 |----------|-----|
 | Nokia SR Linux Security — Configuration Basics Guide | <https://documentation.nokia.com/srlinux/22-6/SR_Linux_Book_Files/Configuration_Basics_Guide/configb-security.html> |
 | Nokia SR Linux CPM Filter Hardening | <https://documentation.nokia.com/srlinux/23-3/books/advanced-solutions/security-harden-use-cpm-filters.html> |
+
+### VMware — no CIS benchmark; DISA STIG and vendor documentation used
+
+| Document | URL |
+|----------|-----|
+| DISA STIG VMware NSX 4.x Manager NDM V1R2 | <https://public.cyber.mil/stigs/downloads/> (search "NSX") |
+| DISA STIG VMware NSX 4.x Tier-0 Gateway Router V1R2 | <https://public.cyber.mil/stigs/downloads/> |
+| Broadcom VMware SD-WAN Security Configuration Guide | <https://techdocs.broadcom.com/us/en/vmware-cis/sd-wan.html> |
+| VMware NSX-T STIG Ansible hardening (vmware/dod-compliance-and-automation) | <https://github.com/vmware/dod-compliance-and-automation> |
 
 ---
 

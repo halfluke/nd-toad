@@ -1,0 +1,123 @@
+{
+  "_nd_toad_profile": "vmware_nsx",
+  "_nsx_manager_host": "nsx01.example.com",
+  "_collected_at": "2025-01-01T00:00:00+00:00",
+  "ssh_service": {
+    "service_name": "ssh",
+    "service_properties": {
+      "start_on_boot": false,
+      "running": false
+    }
+  },
+  "ntp_service": {
+    "server": [
+      {"server": "ntp1.example.com", "timeserver_type": "NTP"},
+      {"server": "ntp2.example.com", "timeserver_type": "NTP"}
+    ]
+  },
+  "cluster": {
+    "cluster_id": "abcd1234-ef56-7890-abcd-ef1234567890",
+    "cluster_nodes": [
+      {"fqdn": "nsx01.example.com", "role": "MASTER", "status": "CONNECTED"},
+      {"fqdn": "nsx02.example.com", "role": "SLAVE",  "status": "CONNECTED"},
+      {"fqdn": "nsx03.example.com", "role": "SLAVE",  "status": "CONNECTED"}
+    ]
+  },
+  "auth_policy": {
+    "api_failed_auth_lockout_period": 900,
+    "api_max_auth_failures": 3,
+    "api_reset_failed_attempts_timer": 900,
+    "cli_failed_auth_lockout_period": 900,
+    "cli_max_auth_failures": 3,
+    "cli_reset_failed_attempts_timer": 900,
+    "cli_timeout": 300,
+    "minimum_password_length": 15,
+    "upper_chars_required": 1,
+    "lower_chars_required": 1,
+    "digits_required": 1,
+    "special_chars_required": 1,
+    "password_reuse_prevention": 24,
+    "password_history_size": 24
+  },
+  "snmp_service": {
+    "service_name": "snmpd",
+    "service_properties": {
+      "start_on_boot": false,
+      "running": false
+    }
+  },
+  "node_version": {
+    "product_version": "4.2.1.0",
+    "node_version": "4.2.1.0.0.23684486",
+    "node_build": "23684486",
+    "product_name": "NSX Manager"
+  },
+  "global_config": {
+    "fips_enabled": true,
+    "tls_version": "TLS_V1_2",
+    "tls_cert_cipher_suites": [
+      "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256",
+      "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384",
+      "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384"
+    ]
+  },
+  "syslog": {
+    "service_name": "syslog",
+    "service_properties": {
+      "start_on_boot": true,
+      "running": true,
+      "exporter": {
+        "0": {
+          "server": "siem.example.com",
+          "port": "514",
+          "protocol": "UDP",
+          "facility": "kern",
+          "log_level": "INFO",
+          "name": "SIEM-Server"
+        }
+      }
+    }
+  },
+  "users": {
+    "result_count": 1,
+    "results": [
+      {
+        "name": "admin",
+        "role": "enterprise_admin",
+        "is_active": true,
+        "password_change_frequency": 90,
+        "last_successful_login_time": 1704067200000
+      }
+    ]
+  },
+  "certificates": {
+    "result_count": 2,
+    "results": [
+      {
+        "id": "cert-01",
+        "display_name": "NSX Manager TLS Certificate",
+        "algorithm": "RSA",
+        "key_size": "2048",
+        "not_after": "2026-01-01T00:00:00.000Z",
+        "issuer_cn": "Example CA"
+      },
+      {
+        "id": "cert-02",
+        "display_name": "NSX API Certificate",
+        "algorithm": "RSA",
+        "key_size": "2048",
+        "not_after": "2026-01-01T00:00:00.000Z",
+        "issuer_cn": "Example CA"
+      }
+    ]
+  },
+  "http_service": {
+    "service_name": "http",
+    "service_properties": {
+      "start_on_boot": true,
+      "running": true,
+      "tls_protocol_version": "TLS_V1_2",
+      "client_auth_enabled": false
+    }
+  }
+}

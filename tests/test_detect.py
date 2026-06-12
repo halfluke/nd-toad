@@ -31,8 +31,10 @@ DETECTION_CASES = [
     ("cisco_ftd",  "good.conf"),
     ("cisco_xe",   "good.conf"),
     ("cisco_xr",   "good.conf"),
-    ("huawei_vrp", "good.conf"),
-    ("f5_bigip",   "good.conf"),
+    ("huawei_vrp",      "good.conf"),
+    ("f5_bigip",        "good.conf"),
+    ("vmware_velocloud", "good.json"),
+    ("vmware_nsx",      "good.json"),
 ]
 
 
