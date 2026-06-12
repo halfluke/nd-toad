@@ -24,6 +24,13 @@ That merged result, plus the firewall and WAN modules, are all flattened
 to a dot-notation text representation so the existing
 ``required_regex``/``forbidden_regex`` probe infrastructure works unchanged.
 
+If a ``findings/methodology_coverage.json`` file exists in the sibling
+``../findings/`` directory (i.e. the velo_collector.py output tree), the
+parser also emits ``vco_check.<KEY>.affected = True/False`` lines for each
+check that velo_collector.py assessed authoritatively.  These lines are
+used by YAML checks that rely on the collector's deep-JSON analysis
+(firewall rule ordering, segment isolation, business policy logic, etc.).
+
 Example flat lines emitted::
 
     edge.name = EDGE-01
@@ -47,14 +54,38 @@ Example flat lines emitted::
     firewall.firewall_logging_enabled = True
     firewall.syslog_forwarding = True
     wan.links.0.encryptOverlay = True
+    vco_check.FW_DefaultDeny.status = fail
+    vco_check.FW_DefaultDeny.affected = True
+    vco_check.NET_SegmentIsolation.status = pass
+    vco_check.NET_SegmentIsolation.affected = False
 """
 
 from __future__ import annotations
 
 import json
+import logging
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
+
+log = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Mapping: velo_collector.py XLSX title  →  sanitised flat-text key
+# Only titles that nd-toad delegates entirely to the collector are included.
+# ---------------------------------------------------------------------------
+_VCO_TITLE_TO_KEY: dict[str, str] = {
+    "[FW] Edge Local Access Restrictions": "FW_EdgeAccess",
+    "[FW] Default Deny":                   "FW_DefaultDeny",
+    "[FW] Rule Scope":                     "FW_RuleScope",
+    "[FW] NAT Exposure":                   "FW_NATExposure",
+    "[System] Edge Versions":              "SYS_EdgeVersions",
+    "[System] Patch Levels":               "SYS_PatchLevels",
+    "[System] Inactive Edge Review":       "SYS_InactiveEdge",
+    "[Net] Segment Isolation":             "NET_SegmentIsolation",
+    "[Net] Default Segment Behaviour":     "NET_DefaultSegment",
+    "[Net] Business Policy Override":      "NET_BusinessPolicy",
+}
 
 from fluff.parsers.base import TextBasedConfig
 
@@ -62,6 +93,55 @@ from fluff.parsers.base import TextBasedConfig
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _load_coverage_lines(combined_path: Path, edge_name: str) -> list[str]:
+    """Return ``vco_check.*`` flat lines from methodology_coverage.json.
+
+    Looks for ``../findings/methodology_coverage.json`` relative to the
+    combined JSON directory (i.e. the sibling ``findings/`` folder that
+    velo_collector.py writes alongside ``combined/``).
+
+    For each check mapped in ``_VCO_TITLE_TO_KEY``:
+    - ``vco_check.<KEY>.status = <pass|fail|partial>``
+    - ``vco_check.<KEY>.affected = True``  if the edge appears in
+      ``edgesAffected`` or the status is not ``pass``
+    - ``vco_check.<KEY>.affected = False`` if the edge is not affected
+
+    Returns an empty list if the coverage file is not found.
+    """
+    coverage_path = combined_path.parent.parent / "findings" / "methodology_coverage.json"
+    if not coverage_path.exists():
+        log.debug("VeloCloud: no methodology_coverage.json found at %s", coverage_path)
+        return []
+
+    try:
+        entries: list[dict] = json.loads(coverage_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as exc:
+        log.warning("VeloCloud: could not load %s: %s", coverage_path, exc)
+        return []
+
+    lines: list[str] = []
+    for entry in entries:
+        title = entry.get("title", "")
+        key = _VCO_TITLE_TO_KEY.get(title)
+        if key is None:
+            continue
+        status = str(entry.get("status", "unknown")).lower()
+        affected_edges: list[str] = entry.get("edgesAffected") or []
+        if status == "pass":
+            affected = False
+        elif edge_name and edge_name in affected_edges:
+            affected = True
+        elif affected_edges:
+            # Other edges are affected but not this one → pass for this edge
+            affected = False
+        else:
+            # partial/fail with no specific edge list → treat conservatively
+            affected = status != "pass"
+        lines.append(f"vco_check.{key}.status = {status}")
+        lines.append(f"vco_check.{key}.affected = {affected}")
+    return lines
+
 
 def _deep_merge(base: dict, override: dict) -> dict:
     """Return a new dict that is *base* updated recursively by *override*."""
@@ -90,7 +170,7 @@ def _flatten(obj: Any, prefix: str = "", out: list[str] | None = None) -> list[s
     return out
 
 
-def _to_flat_text(record: dict) -> str:
+def _to_flat_text(record: dict, coverage_lines: list[str] | None = None) -> str:
     """Convert a combined edge record to flat-text for regex matching."""
     lines: list[str] = []
 
@@ -119,6 +199,10 @@ def _to_flat_text(record: dict) -> str:
     cp = record.get("controlPlaneConfig") or {}
     lines.extend(_flatten(cp, "controlPlane"))
 
+    # Authoritative collector results (vco_check.* lines)
+    if coverage_lines:
+        lines.extend(coverage_lines)
+
     return "\n".join(lines)
 
 
@@ -130,7 +214,9 @@ class VeloCloudConfig(TextBasedConfig):
     """ParsedConfig adapter for a VeloCloud combined edge JSON file."""
 
     def __init__(self, path: Path, record: dict) -> None:
-        flat_text = _to_flat_text(record)
+        edge_name = record.get("edgeName") or ""
+        coverage_lines = _load_coverage_lines(path, edge_name)
+        flat_text = _to_flat_text(record, coverage_lines)
         super().__init__(
             vendor="vmware",
             profile="vmware_velocloud",

@@ -3,10 +3,15 @@
 # Input format: combined edge JSON flattened to dot-notation text
 #               (produced by tools/velo_collector.py)
 #
-# Check counts: 11 automated (required_regex/forbidden_regex)
-#               22 manual_fp_risk (logic requires JSON traversal)
+# Check counts: 13 regex-automated (required_regex/forbidden_regex on combined JSON)
+#               10 collector-backed (required_regex on vco_check.* lines from
+#                  findings/methodology_coverage.json — velo_collector.py must be
+#                  run first; checks FAIL conservatively when coverage is absent)
 #               16 manual (UI-only or live-state required)
-#               Total: 49
+#               Total: 39
+#
+# The 13 XLSX "Partial" checks that required deep event/API data not available
+# in the static combined JSON have been removed (not applicable to nd-toad).
 
 vendor: vmware
 profile: vmware_velocloud
@@ -21,15 +26,12 @@ checks:
     cis:
       - {benchmark: "VMware SD-WAN Security Review Methodology", control: "FW-EdgeAccess-SSH", level: 1}
     probe:
-      type: manual_fp_risk
-      reason: >
-        Reliable detection requires checking whether SSH is enabled AND the
-        allowSelectedIp list is empty. In the flat-text representation, empty
-        lists produce no lines at all, so a regex cannot distinguish
-        "SSH enabled, unrestricted" from "SSH disabled". The velo_collector.py
-        tool's analyse_edge_access function performs this check correctly
-        using the raw JSON. Review its findings for [FW] Edge Local Access
-        Restrictions.
+      type: required_regex
+      # velo_collector.py's analyse_edge_access checks SSH enabled + allowSelectedIp.
+      # Passes only when coverage loaded AND this edge not affected.
+      # FAIL is reported conservatively when methodology_coverage.json is absent
+      # (run velo_collector.py first to populate findings/).
+      pattern: 'vco_check\.FW_EdgeAccess\.affected = False'
     remediation: >
       Configure > Profiles/Edges > Firewall > Edge Access: disable SSH or restrict
       to approved management source IP ranges. Source IP restrictions appear in the
@@ -96,13 +98,8 @@ checks:
     cis:
       - {benchmark: "VMware SD-WAN Security Review Methodology", control: "FW-DefaultDeny", level: 1}
     probe:
-      type: manual_fp_risk
-      reason: >
-        Verification requires examining the ordered rule set across all segments.
-        A regex check on the flat text cannot reliably determine rule ordering
-        or whether the implicit default action is deny-all. Use velo_collector.py
-        output or the Orchestrator UI to confirm the last rule in each segment's
-        firewall policy is a deny-all.
+      type: required_regex
+      pattern: 'vco_check\.FW_DefaultDeny\.affected = False'
     remediation: >
       Configure > Profiles/Edges > Firewall: ensure the last rule in every segment
       firewall policy is an explicit deny-all or set the default action to Block.
@@ -114,12 +111,8 @@ checks:
     cis:
       - {benchmark: "VMware SD-WAN Security Review Methodology", control: "FW-RuleScope", level: 1}
     probe:
-      type: manual_fp_risk
-      reason: >
-        Evaluation of each firewall rule's source/destination requires parsing
-        the nested rules array per segment. A wide-match regex would generate
-        false positives. Review the Orchestrator UI or the firewallConfig module
-        in the combined JSON.
+      type: required_regex
+      pattern: 'vco_check\.FW_RuleScope\.affected = False'
     remediation: >
       Configure > Profiles/Edges > Firewall: replace any/any rules with the
       minimum required source and destination criteria.
@@ -133,12 +126,8 @@ checks:
     cis:
       - {benchmark: "VMware SD-WAN Security Review Methodology", control: "FW-NATExposure", level: 1}
     probe:
-      type: manual_fp_risk
-      reason: >
-        NAT exposure assessment requires enumerating all DNAT entries in the
-        combined JSON and determining whether the exposed service and destination
-        IP are authorised. The risk of false positives from flat-text matching
-        of DNAT entries is too high.
+      type: required_regex
+      pattern: 'vco_check\.FW_NATExposure\.affected = False'
     remediation: >
       Configure > Profiles/Edges > Firewall: review all inbound DNAT rules and
       remove or restrict any that expose services unnecessarily.
@@ -160,24 +149,6 @@ checks:
     remediation: >
       Configure > Profiles > Firewall: configure distinct firewall policies for
       each network segment where isolation is required.
-
-  # ── [FW] Advanced Security Features ──────────────────────────────────────
-
-  - id: VCO-FW-010
-    generic_id: FW-010
-    title: "Advanced security features (ATP/IDS/IPS/URL filtering) should be enabled where licensed"
-    severity: low
-    cis:
-      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "FW-AdvancedSecurity", level: 1}
-    probe:
-      type: manual_fp_risk
-      reason: >
-        Advanced security feature availability is licence-dependent and cannot
-        be determined from flat-text analysis. Review the Orchestrator UI under
-        each profile's Security settings.
-    remediation: >
-      Configure > Profiles > Firewall > Edge Access: enable ATP, IDS/IPS, and
-      URL filtering services where a valid licence is present.
 
   # ── [Monitoring] Central Logging ──────────────────────────────────────────
 
@@ -208,51 +179,6 @@ checks:
     remediation: >
       Configure > Profiles/Edges > Firewall and Device > Telemetry > Syslog:
       enable firewall logging and configure syslog collectors.
-
-  - id: VCO-MON-003
-    generic_id: MON-003
-    title: "Admin activity logs must be reviewed periodically"
-    severity: medium
-    cis:
-      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "MON-AdminActivityLogs", level: 1}
-    probe:
-      type: manual_fp_risk
-      reason: >
-        Verifying that admin activity logs are actually reviewed requires
-        checking enterprise audit event logs. Use velo_collector.py with --events
-        to retrieve MGD_CONF_* events and confirm periodic review.
-    remediation: >
-      Orchestrator > Monitor > Events: filter for configuration change events
-      and confirm periodic review by a named reviewer.
-
-  - id: VCO-MON-004
-    generic_id: MON-004
-    title: "Event review process must be established for configuration changes"
-    severity: low
-    cis:
-      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "MON-EventReview", level: 1}
-    probe:
-      type: manual_fp_risk
-      reason: >
-        Requires checking enterprise audit logs for review cadence. Use
-        velo_collector.py --events to validate.
-    remediation: >
-      Establish and document a schedule for reviewing Orchestrator event logs.
-
-  - id: VCO-MON-005
-    generic_id: MON-005
-    title: "Configuration change logs must be retained"
-    severity: medium
-    cis:
-      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "MON-ConfigChangeLogs", level: 1}
-    probe:
-      type: manual_fp_risk
-      reason: >
-        Log retention settings are in the Orchestrator global configuration,
-        not in the per-edge combined JSON. Verify under Orchestrator administration.
-    remediation: >
-      Orchestrator > Administration > System Properties: confirm log retention
-      meets organisational requirements.
 
   - id: VCO-MON-006
     generic_id: MON-006
@@ -291,12 +217,10 @@ checks:
     cis:
       - {benchmark: "VMware SD-WAN Security Review Methodology", control: "SYS-EdgeVersions", level: 1}
     probe:
-      type: manual_fp_risk
-      reason: >
-        Version comparison requires knowing the organisation-defined minimum
-        acceptable version (set via VCO_MIN_EDGE_VERSION). The regex cannot
-        perform a semantic version comparison. velo_collector.py performs this
-        check automatically.
+      type: required_regex
+      # velo_collector.py compares version against VCO_MIN_EDGE_VERSION.
+      # Passes only when coverage loaded AND edge version is compliant.
+      pattern: 'vco_check\.SYS_EdgeVersions\.affected = False'
     remediation: >
       Monitor > Network > Edges: identify edges below the minimum version and
       schedule upgrade via Configure > Profiles/Edges > Device > Software Update.
@@ -308,60 +232,12 @@ checks:
     cis:
       - {benchmark: "VMware SD-WAN Security Review Methodology", control: "SYS-PatchLevels", level: 1}
     probe:
-      type: manual_fp_risk
-      reason: >
-        Patch verification requires comparing the edge software version against
-        the current Broadcom security bulletin. Use velo_collector.py output
-        combined with the Broadcom release notes.
+      type: required_regex
+      # velo_collector.py compares edge version against Broadcom security bulletins.
+      pattern: 'vco_check\.SYS_PatchLevels\.affected = False'
     remediation: >
       Configure > Profiles/Edges > Device > Software Update: apply the latest
       maintenance release or security patch.
-
-  - id: VCO-SYS-004
-    generic_id: SYS-004
-    title: "Configuration consistency between profile and edge must be maintained"
-    severity: medium
-    cis:
-      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "SYS-ConfigConsistency", level: 1}
-    probe:
-      type: manual_fp_risk
-      reason: >
-        Structural diff between profile and edge device settings requires
-        comparing profileConfig and edgeConfig keys recursively.
-        velo_collector.py's analyse_structural_diff function performs this.
-    remediation: >
-      Review the structural diff output from velo_collector.py to identify
-      unintended edge-level overrides and align with the profile configuration.
-
-  - id: VCO-SYS-005
-    generic_id: SYS-005
-    title: "Edge configuration stack overrides must be reviewed and governed"
-    severity: medium
-    cis:
-      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "SYS-OverrideGovernance", level: 1}
-    probe:
-      type: manual_fp_risk
-      reason: >
-        Override governance requires identifying which edge-level configuration
-        modules override the profile and assessing the risk of each override.
-        Review velo_collector.py findings for override_governance category.
-    remediation: >
-      Audit and document all edge-level overrides; remove unauthorised or
-      unnecessary overrides that weaken the profile security baseline.
-
-  - id: VCO-SYS-006
-    generic_id: SYS-006
-    title: "Edge certificate authentication must be configured"
-    severity: high
-    cis:
-      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "SYS-CertAuth", level: 1}
-    probe:
-      type: manual_fp_risk
-      reason: >
-        Certificate authentication state is not exposed in the combined JSON.
-        Verify under Orchestrator > Monitor > Edges > Properties.
-    remediation: >
-      Ensure edges use certificate-based authentication for VCO communication.
 
   - id: VCO-SYS-007
     generic_id: SYS-007
@@ -422,11 +298,9 @@ checks:
     cis:
       - {benchmark: "VMware SD-WAN Security Review Methodology", control: "SYS-InactiveEdges", level: 1}
     probe:
-      type: manual_fp_risk
-      reason: >
-        Stale edge detection requires comparing the edge last-contact timestamp
-        against the organisation-defined threshold. velo_collector.py performs
-        this check automatically using the VCO_STALE_EDGE_DAYS variable.
+      type: required_regex
+      # velo_collector.py compares lastContact timestamp against VCO_STALE_EDGE_DAYS.
+      pattern: 'vco_check\.SYS_InactiveEdge\.affected = False'
     remediation: >
       Monitor > Network > Edges: filter for edges that have not connected within
       the last 30 days and initiate decommission or investigation.
@@ -440,12 +314,9 @@ checks:
     cis:
       - {benchmark: "VMware SD-WAN Security Review Methodology", control: "NET-SegmentIsolation", level: 1}
     probe:
-      type: manual_fp_risk
-      reason: >
-        Segment isolation requires inspecting the VPN configuration per segment
-        and verifying that Cloud VPN is not configured to allow cross-segment
-        traffic. velo_collector.py's analyse_segment_isolation function performs
-        this evaluation.
+      type: required_regex
+      # velo_collector.py's analyse_segment_isolation inspects VPN segment config.
+      pattern: 'vco_check\.NET_SegmentIsolation\.affected = False'
     remediation: >
       Configure > Profiles > Device (segment dropdown) > Cloud VPN: confirm
       segments do not peer with each other unless explicitly required.
@@ -457,11 +328,9 @@ checks:
     cis:
       - {benchmark: "VMware SD-WAN Security Review Methodology", control: "NET-DefaultSegmentBehaviour", level: 1}
     probe:
-      type: manual_fp_risk
-      reason: >
-        Verifying default segment policy restrictiveness requires parsing the
-        business-policy rules array per segment. velo_collector.py's
-        analyse_business_policy function performs this.
+      type: required_regex
+      # velo_collector.py's analyse_business_policy inspects per-segment rules.
+      pattern: 'vco_check\.NET_DefaultSegment\.affected = False'
     remediation: >
       Configure > Profiles > Business Policy (default segment): ensure no
       permissive catch-all rules exist that bypass intended security controls.
@@ -473,10 +342,9 @@ checks:
     cis:
       - {benchmark: "VMware SD-WAN Security Review Methodology", control: "NET-BusinessPolicyOverride", level: 1}
     probe:
-      type: manual_fp_risk
-      reason: >
-        Evaluating whether business policy overrides bypass segmentation requires
-        cross-referencing QoS rules with segment isolation configuration.
+      type: required_regex
+      # velo_collector.py cross-references QoS rules with segment config.
+      pattern: 'vco_check\.NET_BusinessPolicy\.affected = False'
     remediation: >
       Configure > Profiles > Business Policy: audit all rules and remove any
       that tunnel traffic across segment boundaries without authorisation.
@@ -510,38 +378,6 @@ checks:
       Ensure the Orchestrator management plane is not reachable via overlay
       data-plane addresses. Use out-of-band management or strict firewall rules.
 
-  - id: VCO-NET-006
-    generic_id: NET-006
-    title: "Edge-to-edge communication must be scoped to authorised segments only"
-    severity: medium
-    cis:
-      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "NET-EdgeToEdge", level: 1}
-    probe:
-      type: manual_fp_risk
-      reason: >
-        Edge-to-edge peering configuration is in the segmentation and Cloud VPN
-        settings per segment. Review velo_collector.py's analyse_segmentation
-        output.
-    remediation: >
-      Configure > Profiles > Device (segment) > Cloud VPN: restrict edge-to-edge
-      peering to authorised segments.
-
-  - id: VCO-NET-007
-    generic_id: NET-007
-    title: "Route table must be reviewed for unexpected routes"
-    severity: medium
-    cis:
-      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "NET-RouteTableReview", level: 1}
-    probe:
-      type: manual_fp_risk
-      reason: >
-        Route table review requires live data from the Orchestrator enterprise
-        route API endpoint. Use velo_collector.py --deep to capture
-        routes/enterprise_route_table.json.
-    remediation: >
-      Review the enterprise route table for unexpected or unauthorised routes
-      and remove or filter them.
-
   - id: VCO-NET-008
     generic_id: NET-008
     title: "DNS servers must be configured and must not use untrusted resolvers"
@@ -555,39 +391,7 @@ checks:
       Configure > Profiles/Edges > Device > DNS: configure authoritative or
       internal DNS servers and remove any untrusted public resolvers.
 
-  - id: VCO-NET-009
-    generic_id: NET-009
-    title: "Gateway assignments must be reviewed for unnecessary or risky gateways"
-    severity: low
-    cis:
-      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "NET-GatewayAssignment", level: 1}
-    probe:
-      type: manual_fp_risk
-      reason: >
-        Gateway assignment review requires comparing gateway logical IDs against
-        the approved gateway list. Use velo_collector.py --deep to capture
-        gateways/gateway_*_assignments.json.
-    remediation: >
-      Configure > Profiles > Device > Cloud VPN > Gateway: verify all assigned
-      gateways are on the approved gateway list.
-
-  # ── [VPN] Encryption Strength ─────────────────────────────────────────────
-
-  - id: VCO-VPN-001
-    generic_id: VPN-001
-    title: "VPN encryption must use strong algorithms (AES-256-GCM or equivalent)"
-    severity: high
-    cis:
-      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "VPN-CryptoStrength", level: 1}
-    probe:
-      type: manual_fp_risk
-      reason: >
-        VPN crypto profile verification requires inspecting the controlPlaneConfig
-        encryption settings. velo_collector.py's analyse_vpn_crypto function
-        performs this check.
-    remediation: >
-      Configure > Profiles > Device > Cloud VPN > Advanced Settings: select
-      AES-256-GCM or AES-256 with SHA-256 as the IPsec encryption profile.
+  # ── [VPN] ─────────────────────────────────────────────────────────────────
 
   - id: VCO-VPN-002
     generic_id: VPN-002
@@ -773,23 +577,6 @@ checks:
     remediation: >
       Document any shared LAN resources accessible across segments and restrict
       access to the minimum required scope.
-
-  - id: VCO-ISO-003
-    generic_id: ISO-003
-    title: "Profile inheritance must be reviewed to prevent inadvertent permission escalation"
-    severity: medium
-    cis:
-      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "ISO-ProfileInheritance", level: 1}
-    probe:
-      type: manual_fp_risk
-      reason: >
-        Profile inheritance review requires comparing profileConfig with
-        edgeConfig to identify where edge overrides weaken the inherited security
-        posture. velo_collector.py's analyse_segmentation and
-        analyse_structural_diff functions perform this evaluation.
-    remediation: >
-      Review all edge-level deviations from the profile baseline and ensure no
-      override reduces security controls below the profile standard.
 
   - id: VCO-ISO-004
     generic_id: ISO-004

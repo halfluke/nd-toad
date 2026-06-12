@@ -217,6 +217,51 @@ class TestVmwareVeloCloudParser:
         lines = self.config.find_lines(r"effective\.ntp\.enabled")
         assert len(lines) >= 1
 
+    def test_no_coverage_lines_when_file_absent(self) -> None:
+        """Without a findings/ directory the flat text has no vco_check.* lines."""
+        assert "vco_check." not in self.config.text
+
+    def test_coverage_lines_emitted_when_file_present(self, tmp_path: Path) -> None:
+        """With a methodology_coverage.json the parser emits vco_check.* lines."""
+        import json as _json
+        import shutil
+
+        combined_dir = tmp_path / "combined"
+        findings_dir = tmp_path / "findings"
+        combined_dir.mkdir()
+        findings_dir.mkdir()
+        shutil.copy(FIXTURES_DIR / "vmware_velocloud" / "good.json", combined_dir / "good.json")
+
+        coverage = [
+            {
+                "title": "[FW] Default Deny",
+                "automationTier": "automated",
+                "status": "fail",
+                "edgesAffected": ["EDGE-BRANCH-01"],
+            },
+            {
+                "title": "[Net] Segment Isolation",
+                "automationTier": "automated",
+                "status": "pass",
+                "edgesAffected": [],
+            },
+            {
+                "title": "[FW] NAT Exposure",
+                "automationTier": "automated",
+                "status": "fail",
+                "edgesAffected": ["OTHER-EDGE"],  # This edge is not affected
+            },
+        ]
+        (findings_dir / "methodology_coverage.json").write_text(_json.dumps(coverage))
+
+        config = load_config(combined_dir / "good.json", "vmware_velocloud")
+        # Edge is in edgesAffected for DefaultDeny → affected = True
+        assert "vco_check.FW_DefaultDeny.affected = True" in config.text
+        # pass status → affected = False
+        assert "vco_check.NET_SegmentIsolation.affected = False" in config.text
+        # fail but this edge not in list → affected = False
+        assert "vco_check.FW_NATExposure.affected = False" in config.text
+
 
 class TestVmwareNSXParser:
     @pytest.fixture(autouse=True)
