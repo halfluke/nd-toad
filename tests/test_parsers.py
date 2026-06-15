@@ -262,6 +262,55 @@ class TestVmwareVeloCloudParser:
         # fail but this edge not in list → affected = False
         assert "vco_check.FW_NATExposure.affected = False" in config.text
 
+    def test_coverage_new_statuses(self, tmp_path: Path) -> None:
+        """assisted and not_run statuses are treated conservatively (affected=True)."""
+        import json as _json
+        import shutil
+
+        combined_dir = tmp_path / "combined"
+        findings_dir = tmp_path / "findings"
+        combined_dir.mkdir()
+        findings_dir.mkdir()
+        shutil.copy(FIXTURES_DIR / "vmware_velocloud" / "good.json", combined_dir / "good.json")
+
+        coverage = [
+            {
+                "title": "[VPN] Encryption Strength",
+                "automationTier": "automated",
+                "status": "assisted",
+                "edgesAffected": [],
+            },
+            {
+                "title": "[VPN] Certificate Validation",
+                "automationTier": "automated",
+                "status": "not_run",
+                "edgesAffected": [],
+            },
+            {
+                "title": "[Mgmt] Dormant User Account Review",
+                "automationTier": "automated",
+                "status": "fail",
+                "edgesAffected": [],  # enterprise-level: no edge names
+            },
+            {
+                "title": "[Net] Edge-to-Edge Communication",
+                "automationTier": "automated",
+                "status": "pass",
+                "edgesAffected": [],
+            },
+        ]
+        (findings_dir / "methodology_coverage.json").write_text(_json.dumps(coverage))
+
+        config = load_config(combined_dir / "good.json", "vmware_velocloud")
+        # assisted → conservative: affected = True
+        assert "vco_check.VPN_EncryptionStrength.affected = True" in config.text
+        # not_run → conservative: affected = True
+        assert "vco_check.VPN_CertValidation.affected = True" in config.text
+        # enterprise fail (empty edgesAffected, status=fail) → affected = True
+        assert "vco_check.MGMT_DormantUsers.affected = True" in config.text
+        # pass → affected = False
+        assert "vco_check.NET_EdgeToEdge.affected = False" in config.text
+
 
 class TestVmwareNSXParser:
     @pytest.fixture(autouse=True)

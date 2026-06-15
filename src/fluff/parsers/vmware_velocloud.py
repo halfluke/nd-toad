@@ -58,6 +58,9 @@ Example flat lines emitted::
     vco_check.FW_DefaultDeny.affected = True
     vco_check.NET_SegmentIsolation.status = pass
     vco_check.NET_SegmentIsolation.affected = False
+    certs.0.serialNumber = abc123
+    dsmod.segments.0.name = Global Segment
+    qos.segments.0.name = Global Segment
 """
 
 from __future__ import annotations
@@ -72,9 +75,13 @@ log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Mapping: velo_collector.py XLSX title  →  sanitised flat-text key
-# Only titles that nd-toad delegates entirely to the collector are included.
+# Only titles that nd-toad delegates entirely to the collector are included
+# (i.e. checks whose automationTier is "automated" in _AUTOMATION_TIER_BY_TITLE
+# inside velo_collector.py and whose logic cannot be replicated with a simple
+# regex on the combined JSON).
 # ---------------------------------------------------------------------------
 _VCO_TITLE_TO_KEY: dict[str, str] = {
+    # Original 10 automated-but-complex checks
     "[FW] Edge Local Access Restrictions": "FW_EdgeAccess",
     "[FW] Default Deny":                   "FW_DefaultDeny",
     "[FW] Rule Scope":                     "FW_RuleScope",
@@ -85,6 +92,12 @@ _VCO_TITLE_TO_KEY: dict[str, str] = {
     "[Net] Segment Isolation":             "NET_SegmentIsolation",
     "[Net] Default Segment Behaviour":     "NET_DefaultSegment",
     "[Net] Business Policy Override":      "NET_BusinessPolicy",
+    # Newly automated in velo_final (velo_collector.py ≥ this release)
+    "[Net] Edge-to-Edge Communication":    "NET_EdgeToEdge",
+    "[VPN] Encryption Strength":           "VPN_EncryptionStrength",
+    "[VPN] Certificate Validation":        "VPN_CertValidation",
+    "[VPN] Key Rotation":                  "VPN_KeyRotation",
+    "[Mgmt] Dormant User Account Review":  "MGMT_DormantUsers",
 }
 
 from fluff.parsers.base import TextBasedConfig
@@ -130,13 +143,19 @@ def _load_coverage_lines(combined_path: Path, edge_name: str) -> list[str]:
         affected_edges: list[str] = entry.get("edgesAffected") or []
         if status == "pass":
             affected = False
+        elif status in ("assisted", "not_run"):
+            # "assisted" = partial-tier with findings → needs human review (conservative)
+            # "not_run"  = events/deep flag not used → unknown, treat conservatively
+            affected = True
         elif edge_name and edge_name in affected_edges:
             affected = True
         elif affected_edges:
             # Other edges are affected but not this one → pass for this edge
             affected = False
         else:
-            # partial/fail with no specific edge list → treat conservatively
+            # fail/partial with empty edgesAffected = enterprise-level finding
+            # (edgeName was "(enterprise)" so filtered out by the collector).
+            # Conservative: flag as affected on every edge.
             affected = status != "pass"
         lines.append(f"vco_check.{key}.status = {status}")
         lines.append(f"vco_check.{key}.affected = {affected}")
@@ -198,6 +217,21 @@ def _to_flat_text(record: dict, coverage_lines: list[str] | None = None) -> str:
     # Control-plane module
     cp = record.get("controlPlaneConfig") or {}
     lines.extend(_flatten(cp, "controlPlane"))
+
+    # Device-settings portal module (richer than APIv2 deviceSettings)
+    dsmod = record.get("deviceSettingsModule") or {}
+    if dsmod:
+        lines.extend(_flatten(dsmod, "dsmod"))
+
+    # QoS/business-policy module
+    qos = record.get("qosConfig") or {}
+    if qos:
+        lines.extend(_flatten(qos, "qos"))
+
+    # Edge certificates (sanitised; emitted as certs.<n>.field = value)
+    certs = record.get("edgeCertificates") or []
+    if certs:
+        lines.extend(_flatten(certs, "certs"))
 
     # Authoritative collector results (vco_check.* lines)
     if coverage_lines:

@@ -8,7 +8,7 @@ Architecture:
 
 Detection modules:
   1. Firewall rule analysis       — firewall module; rule scope, default deny, logging
-  2. Edge access / NAT / overrides — services block, DNAT exposure, override governance
+  2. Edge access / NAT / overrides — services block, overlay→mgmt, DNAT, override governance
   3. Business policy / WAN        — segment rules, QoS override, WAN link encryption
   4. Segmentation analysis        — profile vs edge drift + segment isolation (VPN)
   5. Structural diff              — LAN/WAN drift when deviceSettings override enabled
@@ -16,7 +16,9 @@ Detection modules:
   7. Edge inventory               — offline/stale edges, activation, version review
   8. Enterprise events (optional) — --events: filtered MGD_CONF_* and auth events
   9. Methodology coverage         — XLSX-linked findings, manual checklist, Dradis CSV
- 10. Deep collectors (--deep)     — route table, gateway assignments, VPN crypto
+ 10. Deep collectors (--deep)     — route table, gateway assignments
+ 11. VPN review                    — encryption strength, certificate validation, key rotation
+ 12. Enterprise management         — API token inventory, auth mode, dormant users
 
 Output layout:
   vco_output/<timestamp>/
@@ -31,6 +33,10 @@ Output layout:
     wan/<edge>.json
     routes/enterprise_route_table.json   (--deep)
     gateways/gateway_<id>_assignments.json (--deep)
+    certs/<edge>.json
+    mgmt/enterprise.json
+    mgmt/enterprise_users.json
+    mgmt/api_tokens.json
     findings/
       findings.json
       findings.csv
@@ -54,7 +60,7 @@ Optional:
   VCO_MIN_EDGE_VERSION   minimum acceptable edge software version, e.g. 6.0.0
   VCO_EVENTS_HOURS       event lookback when using --events (default: 168)
   VCO_METHODOLOGY_XLSX   path to methodology workbook (default: velocloud_config_review_FINAL.xlsx)
-  VCO_PHASE4             set to 1 to enable --deep collectors (route table, gateways)
+  VCO_DORMANT_USER_DAYS  days since last login before dormant user finding (default: 90)
 
 Usage:
   export VCO_HOSTNAME=vco.example.velocloud.net
@@ -103,6 +109,7 @@ METHODOLOGY_XLSX           = os.getenv(
     "velocloud_config_review_FINAL.xlsx",
 )
 PHASE4_DEFAULT             = os.getenv("VCO_PHASE4", "").strip().lower() in {"1", "true", "yes", "on"}
+DORMANT_USER_DAYS          = int(os.getenv("VCO_DORMANT_USER_DAYS", "90"))
 
 _SENSITIVE_NAT_PORTS       = {22, 23, 3389, 445, 1433, 3306, 5432, 5900, 8080, 8443}
 _EDGE_ACCESS_SERVICES      = ("ssh", "snmp", "localUi", "console", "icmp", "post")
@@ -403,6 +410,48 @@ def get_edge_configuration_modules(edge_numeric_id: int) -> dict:
     return result if isinstance(result, dict) else {}
 
 
+def get_edge_certificates(edge_numeric_id: int) -> list:
+    """Portal RPC: edge certificate history (used for VPN cert validation / rotation)."""
+    result = portal_rpc(
+        "edge/getEdgeCertificates",
+        {"edgeId": int(edge_numeric_id)},
+        request_id=72 + (int(edge_numeric_id) % 1000),
+    )
+    if isinstance(result, list):
+        return result
+    return []
+
+
+def get_enterprise_record() -> dict:
+    """Portal RPC: enterprise metadata (domain, endpointPkiMode, …)."""
+    result = portal_rpc(
+        "enterprise/getEnterprise",
+        {"enterpriseId": int(VCO_ENTERPRISE_NUMERIC_ID)},
+        request_id=80,
+    )
+    return result if isinstance(result, dict) else {}
+
+
+def get_enterprise_users() -> list:
+    """Portal RPC: enterprise user accounts."""
+    result = portal_rpc(
+        "enterprise/getEnterpriseUsers",
+        {"enterpriseId": int(VCO_ENTERPRISE_NUMERIC_ID)},
+        request_id=81,
+    )
+    return result if isinstance(result, list) else []
+
+
+def get_enterprise_api_tokens() -> list:
+    """Portal RPC: enterprise API token metadata (no secret values returned)."""
+    result = portal_rpc(
+        "enterprise/getApiTokens",
+        {"enterpriseId": int(VCO_ENTERPRISE_NUMERIC_ID)},
+        request_id=82,
+    )
+    return result if isinstance(result, list) else []
+
+
 def get_profile_configuration_modules(profile_numeric_id: int) -> list:
     """Portal RPC: profile configuration modules (deviceSettings, firewall, WAN, …)."""
     result = portal_rpc(
@@ -579,15 +628,16 @@ def _analyse_rule(ctx, nr: dict, location: str, findings: list) -> None:
     dst_broad = _is_broad_cidr(str(nr["dst"] or ""))
     name      = nr["name"]
 
-    # any/any allow
+    # any/any allow (typically AllowAny catch-all — common VeloCloud design)
     if src_any and dst_any:
         findings.append(_finding(
-            ctx, "firewall_rules", "high",
+            ctx, "firewall_rules", "low",
             "Allow rule with no source or destination constraint (any/any)",
             f"{location}.rule[{name}]",
             f"action={nr['action']}, src={nr['src']}, dst={nr['dst']}",
-            "Restrict to specific source and destination prefixes. "
-            "Remove or scope all allow-any-any rules.",
+            "AllowAny-style catch-all is typical VeloCloud design after scoped rules. "
+            "Tighten only if strict egress is required; [FW] Default Deny (stateful "
+            "firewall) is the higher-priority control.",
             methodology_ref="[FW] Rule Scope",
         ))
         return  # no point stacking more findings on the same rule
@@ -685,17 +735,30 @@ def _firewall_has_rules(firewall_cfg: dict) -> bool:
     return False
 
 
-def _analyse_firewall_module(ctx: dict, firewall_cfg: dict, findings: list) -> None:
+def _analyse_firewall_module(
+    ctx: dict,
+    firewall_cfg: dict,
+    findings: list,
+    segment_context: dict = None,
+) -> None:
     """Inspect effective firewall module (inbound/outbound rules per segment)."""
     if not isinstance(firewall_cfg, dict):
         return
 
     if firewall_cfg.get("stateful_firewall_enabled") is False:
+        evidence = "stateful_firewall_enabled=False"
+        if isinstance(segment_context, dict) and segment_context.get("segments"):
+            evidence = json.dumps({
+                "stateful_firewall_enabled": False,
+                "interSegmentRouting": segment_context.get("interSegmentRouting"),
+                "segmentCount": segment_context.get("segmentCount"),
+                "segments": segment_context.get("segments"),
+            }, ensure_ascii=False)
         findings.append(_finding(
             ctx, "firewall_rules", "high",
             "Stateful firewall disabled",
             "firewall.stateful_firewall_enabled",
-            "stateful_firewall_enabled=False",
+            evidence,
             "Enable stateful firewall with deny-by-default policy.",
             methodology_ref="[FW] Default Deny",
         ))
@@ -757,6 +820,41 @@ def _analyse_firewall_module(ctx: dict, firewall_cfg: dict, findings: list) -> N
                 ))
 
 
+def _segment_enforcement_lan_context(
+    profile_cfg: dict,
+    edge_cfg: dict,
+    firewall_cfg: dict,
+    edge_ds: dict,
+    profile_modules: dict = None,
+    profile_fw: dict = None,
+) -> dict:
+    """Build multi-segment LAN context for Default Deny evidence (no duplicate finding)."""
+    effective = _effective_config(profile_cfg, edge_cfg)
+    name_lookup = _build_segment_name_lookup(
+        profile_modules, profile_cfg, profile_fw, firewall_cfg,
+    )
+    lan_map = _build_segment_lan_map(effective, name_lookup)
+    inter_seg, inter_reason = _inter_segment_routing_enabled(lan_map, edge_ds)
+    if not inter_seg:
+        return {}
+    lan_segments = []
+    for seg_key, info in lan_map.items():
+        if info.get("network_count", 0) <= 0:
+            continue
+        lan_segments.append({
+            "segment": info.get("name") or seg_key,
+            "lanNetworks": info.get("networks") or [],
+            "networkCount": info.get("network_count", 0),
+        })
+    if not lan_segments:
+        return {}
+    return {
+        "interSegmentRouting": inter_reason,
+        "segmentCount": len(lan_segments),
+        "segments": lan_segments,
+    }
+
+
 def analyse_firewall_rules(
     ctx: dict,
     profile_cfg: dict,
@@ -764,18 +862,24 @@ def analyse_firewall_rules(
     findings: list,
     firewall_cfg: dict = None,
     profile_fw: dict = None,
+    edge_ds: dict = None,
+    profile_modules: dict = None,
 ) -> None:
     """
     Entry point for firewall rule analysis.
     Primary source: edge firewall module from Portal API when present.
     Falls back to profile firewall module, then deviceSettings ccFirewall / rules.
     """
+    segment_context = _segment_enforcement_lan_context(
+        profile_cfg, edge_cfg, firewall_cfg or {}, edge_ds,
+        profile_modules=profile_modules, profile_fw=profile_fw,
+    )
     if isinstance(firewall_cfg, dict) and firewall_cfg:
-        _analyse_firewall_module(ctx, firewall_cfg, findings)
+        _analyse_firewall_module(ctx, firewall_cfg, findings, segment_context)
         return
 
     if isinstance(profile_fw, dict) and profile_fw:
-        _analyse_firewall_module(ctx, profile_fw, findings)
+        _analyse_firewall_module(ctx, profile_fw, findings, segment_context)
         return
 
     for source_label, cfg in [("profile", profile_cfg), ("edge", edge_cfg)]:
@@ -812,6 +916,401 @@ def analyse_firewall_rules(
                     f"defaultAction={default_action}",
                     "Change the default firewall policy to DENY. "
                     "Use explicit allow rules for required traffic only.",
+                ))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# MODULE 1a — SEGMENT ENFORCEMENT (partial / assisted)
+# ─────────────────────────────────────────────────────────────────────────────
+
+_GLOBAL_SEGMENT_LABELS = {"global segment", "0"}
+
+
+def _is_sensitive_vrf_segment(label: str, seg_id=None) -> bool:
+    """Non-Global segments treated as sensitive VRFs for inbound posture review."""
+    if str(label).strip().lower() in _GLOBAL_SEGMENT_LABELS:
+        return False
+    if seg_id is not None and str(seg_id) == "0":
+        return False
+    return True
+
+
+def _match_field_to_network(match: dict, field: str):
+    """Parse VeloCloud firewall/QoS match sip/dip to ip_network."""
+    if not isinstance(match, dict):
+        return None
+    value = match.get(field)
+    if value is None or _is_any(value):
+        return None
+    rule_type_key = "s_rule_type" if field == "sip" else "d_rule_type"
+    rule_type = str(match.get(rule_type_key) or "prefix").lower()
+    try:
+        if rule_type == "netmask":
+            mask_key = "ssm" if field == "sip" else "dsm"
+            mask = match.get(mask_key)
+            if mask:
+                ip_int = int(ipaddress.ip_address(value))
+                mask_int = int(ipaddress.ip_address(mask))
+                prefix_len = bin(mask_int).count("1")
+                return ipaddress.ip_network(f"{value}/{prefix_len}", strict=False)
+        text = str(value)
+        if "/" not in text:
+            text = f"{text}/32"
+        return ipaddress.ip_network(text, strict=False)
+    except ValueError:
+        return None
+
+
+def _normalised_rule_prefixes(nr: dict) -> list:
+    prefixes = []
+    for field in ("src", "dst"):
+        if nr.get(field) and not _is_any(nr.get(field)):
+            try:
+                text = str(nr[field])
+                if "/" not in text:
+                    text = f"{text}/32"
+                prefixes.append(ipaddress.ip_network(text, strict=False))
+            except ValueError:
+                continue
+    return prefixes
+
+
+def _build_segment_lan_map(effective_cfg: dict, name_lookup: dict = None) -> dict:
+    """
+    Map segment key → {name, network_count, prefixes, networks}.
+    Uses APIv2 effective deviceSettings lan.networks segment href binding.
+    """
+    seg_by_key = {
+        _segment_key(seg): seg
+        for seg in (effective_cfg.get("segments") or [])
+        if isinstance(seg, dict)
+    }
+    lan_map = {}
+    for net in get_nested(effective_cfg, "lan", "networks") or []:
+        if not isinstance(net, dict) or net.get("disabled"):
+            continue
+        seg_ref = net.get("segment") or {}
+        href_id = _segment_href_id({"segment": seg_ref})
+        seg_key = None
+        seg_label = None
+        for key, seg in seg_by_key.items():
+            if key == href_id:
+                seg_key = key
+                seg_label = _segment_display_name(seg, name_lookup)
+                break
+        if not seg_key:
+            seg_key = href_id or "unknown"
+            seg_label = href_id or "unknown"
+        entry = lan_map.setdefault(seg_key, {
+            "name": seg_label,
+            "network_count": 0,
+            "prefixes": [],
+            "networks": [],
+        })
+        entry["network_count"] += 1
+        entry["networks"].append(net.get("name") or "(unnamed)")
+        cidr_ip = net.get("cidrIp")
+        cidr_prefix = net.get("cidrPrefix")
+        if cidr_ip is not None and cidr_prefix is not None:
+            try:
+                entry["prefixes"].append(
+                    ipaddress.ip_network(f"{cidr_ip}/{cidr_prefix}", strict=False)
+                )
+            except ValueError:
+                pass
+    return lan_map
+
+
+def _inter_segment_routing_enabled(lan_map: dict, edge_ds: dict) -> tuple:
+    """True when multiple LAN-bearing segments exist or portal DS has segment routes."""
+    lan_segments = [k for k, v in lan_map.items() if v.get("network_count", 0) > 0]
+    if len(lan_segments) >= 2:
+        return True, f"{len(lan_segments)} segments with LAN networks"
+    for seg in (edge_ds or {}).get("segments") or []:
+        if not isinstance(seg, dict):
+            continue
+        routes = seg.get("routes")
+        if isinstance(routes, list) and routes:
+            label = _segment_display_name(seg)
+            return True, f"segment routes on {label}"
+        route_maps = seg.get("routeMaps")
+        if isinstance(route_maps, list) and route_maps:
+            label = _segment_display_name(seg)
+            return True, f"routeMaps on {label}"
+    return False, ""
+
+
+def _firewall_seg_signature(fseg: dict) -> tuple:
+    parts = []
+    for direction in ("inbound", "outbound", "inboundV6", "outboundV6"):
+        for rule in fseg.get(direction) or []:
+            if not isinstance(rule, dict):
+                continue
+            flat = _flatten_firewall_rule(rule)
+            parts.append((
+                rule.get("name") or rule.get("ruleLogicalId"),
+                flat.get("action"),
+                flat.get("sip"),
+                flat.get("dip"),
+                flat.get("proto"),
+            ))
+    return tuple(parts)
+
+
+def _firewall_default_is_allow(fw_cfg: dict) -> bool:
+    for settings_key in ("statefulFirewallSettings", "statefulFirewallSettingsV6"):
+        settings = (fw_cfg or {}).get(settings_key) or {}
+        if not isinstance(settings, dict):
+            continue
+        default_action = (
+            settings.get("defaultAction")
+            or settings.get("default_action")
+            or settings.get("defaultFirewallAction")
+        )
+        if default_action and _is_allow(default_action):
+            return True
+    return False
+
+
+def _weak_segment_deny_posture(fw_cfg: dict, fseg: dict) -> bool:
+    """True when deny-by-default / inbound enforcement is weak for cross-segment allows."""
+    if not isinstance(fw_cfg, dict):
+        return True
+    if fw_cfg.get("firewall_enabled") is False:
+        return True
+    if fw_cfg.get("stateful_firewall_enabled") is not True:
+        return True
+    if _firewall_default_is_allow(fw_cfg):
+        return True
+    inbound = (fseg.get("inbound") or []) + (fseg.get("inboundV6") or [])
+    if not inbound:
+        return True
+    return not any(
+        isinstance(r, dict) and not _is_allow(_flatten_firewall_rule(r).get("action"))
+        for r in inbound
+    )
+
+
+def _qos_rule_is_permit(rule: dict) -> bool:
+    if not isinstance(rule, dict):
+        return False
+    action = rule.get("action") or {}
+    if action.get("allow_or_deny") and not _is_allow(action.get("allow_or_deny")):
+        return False
+    return bool(
+        action.get("QoS")
+        or action.get("edge2EdgeRouteAction")
+        or action.get("edge2DataCenterRouteAction")
+        or action.get("edge2CloudRouteAction")
+    )
+
+
+def _cross_segment_target(src_seg_key: str, lan_map: dict, prefixes: list):
+    """Return target segment name if prefixes overlap another segment's LAN."""
+    for prefix in prefixes or []:
+        for key, info in lan_map.items():
+            if key == src_seg_key:
+                continue
+            for lan_prefix in info.get("prefixes") or []:
+                if prefix.overlaps(lan_prefix):
+                    return info.get("name") or key
+    return None
+
+
+def analyse_segment_enforcement(
+    ctx: dict,
+    profile_cfg: dict,
+    edge_cfg: dict,
+    findings: list,
+    firewall_cfg: dict = None,
+    profile_fw: dict = None,
+    edge_ds: dict = None,
+    profile_ds: dict = None,
+    edge_qos: dict = None,
+    profile_modules: dict = None,
+    profile_fw_module: dict = None,
+) -> None:
+    """
+    [FW] Segment Enforcement — partial / assisted checks (5 heuristics).
+    Requires portal firewall + deviceSettings + QOS modules where available.
+    """
+    if not isinstance(firewall_cfg, dict) or not firewall_cfg:
+        return
+
+    effective = _effective_config(profile_cfg, edge_cfg)
+    name_lookup = _build_segment_name_lookup(
+        profile_modules, profile_cfg, profile_fw_module or profile_fw, firewall_cfg,
+    )
+    lan_map = _build_segment_lan_map(effective, name_lookup)
+    inter_seg, inter_reason = _inter_segment_routing_enabled(lan_map, edge_ds)
+    edge_fw_by_key = {
+        _segment_key(seg): seg
+        for seg in (firewall_cfg.get("segments") or [])
+        if isinstance(seg, dict)
+    }
+    profile_fw_by_key = {
+        _segment_key(seg): seg
+        for seg in ((profile_fw or {}).get("segments") or [])
+        if isinstance(seg, dict)
+    }
+    firewall_override = bool((ctx.get("edgeOverrides") or {}).get("firewall"))
+
+    # 1) Firewall globally disabled + LAN + inter-segment routing
+    #    (stateless mode is reported under [FW] Default Deny with segment context)
+    if inter_seg and firewall_cfg.get("firewall_enabled") is False:
+        lan_segments = []
+        for seg_key, info in lan_map.items():
+            if info.get("network_count", 0) <= 0:
+                continue
+            lan_segments.append({
+                "segment": info.get("name") or seg_key,
+                "lanNetworks": info.get("networks") or [],
+                "networkCount": info.get("network_count", 0),
+            })
+        if lan_segments:
+            findings.append(_finding(
+                ctx, "firewall_rules", "medium",
+                "Segment firewall disabled on edge with multi-segment LAN and inter-segment routing",
+                "firewall.firewall_enabled",
+                json.dumps({
+                    "interSegmentRouting": inter_reason,
+                    "firewall_enabled": firewall_cfg.get("firewall_enabled"),
+                    "segmentCount": len(lan_segments),
+                    "segments": lan_segments,
+                }, ensure_ascii=False),
+                "Enable segment firewall and confirm boundaries between VRFs/segments.",
+                methodology_ref="[FW] Segment Enforcement",
+                automation="partial",
+            ))
+
+    # 2) No inbound rules on sensitive VRFs when stateful firewall on
+    if firewall_cfg.get("stateful_firewall_enabled") is True:
+        for seg_key, fseg in edge_fw_by_key.items():
+            label = _segment_display_name(fseg, name_lookup)
+            seg_id = get_nested(fseg, "segment", "segmentId")
+            if not _is_sensitive_vrf_segment(label, seg_id):
+                continue
+            inbound = (fseg.get("inbound") or []) + (fseg.get("inboundV6") or [])
+            if inbound:
+                continue
+            findings.append(_finding(
+                ctx, "firewall_rules", "medium",
+                f"Sensitive VRF segment {label} has no inbound firewall rules with stateful firewall enabled",
+                f"firewall.segments[{label}].inbound",
+                json.dumps({
+                    "segment": label,
+                    "stateful_firewall_enabled": True,
+                    "inboundRuleCount": 0,
+                }, ensure_ascii=False),
+                "Add inbound rules or document accepted exposure for this VRF segment.",
+                methodology_ref="[FW] Segment Enforcement",
+                automation="partial",
+            ))
+
+    # 3) Edge segment firewall diverges from profile baseline
+    for seg_key, efseg in edge_fw_by_key.items():
+        pfseg = profile_fw_by_key.get(seg_key)
+        if not pfseg:
+            continue
+        if _firewall_seg_signature(efseg) == _firewall_seg_signature(pfseg):
+            continue
+        label = _segment_display_name(efseg, name_lookup)
+        findings.append(_finding(
+            ctx, "firewall_rules", "medium",
+            f"Edge segment firewall diverges from profile on segment {label}",
+            f"firewall.segments[{label}]",
+            json.dumps({
+                "segment": label,
+                "edgeFirewallOverride": firewall_override,
+                "edgeOutboundRules": len(efseg.get("outbound") or []),
+                "profileOutboundRules": len(pfseg.get("outbound") or []),
+                "edgeInboundRules": len(efseg.get("inbound") or []),
+                "profileInboundRules": len(pfseg.get("inbound") or []),
+            }, ensure_ascii=False),
+            "Confirm edge firewall divergence is intentional; align with profile if not.",
+            methodology_ref="[FW] Segment Enforcement",
+            automation="partial",
+        ))
+
+    # 4) Business policy (QOS) permits cross-segment flows
+    qos_cfg = edge_qos if isinstance(edge_qos, dict) else {}
+    for qseg in qos_cfg.get("segments") or []:
+        if not isinstance(qseg, dict):
+            continue
+        src_key = _segment_key(qseg)
+        src_label = _segment_display_name(qseg, name_lookup)
+        for rule in qseg.get("rules") or []:
+            if not isinstance(rule, dict) or not _qos_rule_is_permit(rule):
+                continue
+            match = rule.get("match") or {}
+            prefixes = []
+            for field in ("sip", "dip"):
+                net = _match_field_to_network(match, field)
+                if net:
+                    prefixes.append(net)
+            if _is_any(match.get("dip")):
+                continue
+            target = _cross_segment_target(src_key, lan_map, prefixes)
+            if not target:
+                continue
+            findings.append(_finding(
+                ctx, "firewall_rules", "medium",
+                f"Business policy on segment {src_label} permits cross-segment flow toward {target}",
+                f"QOS.segments[{src_label}].rules[{rule.get('name', '?')}]",
+                json.dumps({
+                    "sourceSegment": src_label,
+                    "targetSegment": target,
+                    "rule": rule.get("name"),
+                    "match": {
+                        "sip": match.get("sip"),
+                        "dip": match.get("dip"),
+                    },
+                }, ensure_ascii=False),
+                "Confirm cross-segment business policy is intended; restrict if segments must stay isolated.",
+                methodology_ref="[FW] Segment Enforcement",
+                automation="partial",
+            ))
+
+    # 5) Explicit inter-segment firewall allow without deny/default posture
+    for seg_key, fseg in edge_fw_by_key.items():
+        src_label = _segment_display_name(fseg, name_lookup)
+        if _weak_segment_deny_posture(firewall_cfg, fseg):
+            weak_posture = True
+        else:
+            weak_posture = False
+        if not weak_posture:
+            continue
+        for direction in ("inbound", "outbound", "inboundV6", "outboundV6"):
+            for rule in fseg.get(direction) or []:
+                if not isinstance(rule, dict):
+                    continue
+                flat = _flatten_firewall_rule(rule)
+                if not _is_allow(flat.get("action")):
+                    continue
+                nr = _normalise_rule(flat)
+                if nr.get("name") == "AllowAny" and _is_any(nr.get("src")) and _is_any(nr.get("dst")):
+                    continue
+                prefixes = _normalised_rule_prefixes(nr)
+                if _is_any(nr.get("dst")):
+                    continue
+                target = _cross_segment_target(seg_key, lan_map, prefixes)
+                if not target:
+                    continue
+                findings.append(_finding(
+                    ctx, "firewall_rules", "medium",
+                    f"Inter-segment firewall allow on {src_label} toward {target} without deny/default posture",
+                    f"firewall.segments[{src_label}].{direction}[{rule.get('name', '?')}]",
+                    json.dumps({
+                        "sourceSegment": src_label,
+                        "targetSegment": target,
+                        "rule": rule.get("name"),
+                        "direction": direction,
+                        "stateful_firewall_enabled": firewall_cfg.get("stateful_firewall_enabled"),
+                        "defaultActionAllow": _firewall_default_is_allow(firewall_cfg),
+                    }, ensure_ascii=False),
+                    "Add deny-by-default posture or scoped allows before permitting cross-segment traffic.",
+                    methodology_ref="[FW] Segment Enforcement",
+                    automation="partial",
                 ))
 
 
@@ -877,6 +1376,166 @@ def analyse_edge_access(ctx: dict, firewall_cfg: dict, findings: list) -> None:
             "Disable USB access unless a documented exception exists.",
             methodology_ref="[FW] Edge Local Access Restrictions",
         ))
+
+
+_ORCHESTRATOR_ALLOW_NETS = (
+    ipaddress.ip_network("169.254.0.0/16"),
+)
+
+
+def _extract_lan_prefixes(cfg: dict) -> list:
+    """LAN/VLAN networks from deviceSettings (overlay-reachable peer site prefixes)."""
+    prefixes = []
+    if not isinstance(cfg, dict):
+        return prefixes
+    for net in (cfg.get("lan") or {}).get("networks") or []:
+        if not isinstance(net, dict) or net.get("disabled"):
+            continue
+        cidr_ip = net.get("cidrIp")
+        prefix_len = net.get("cidrPrefix")
+        if not cidr_ip or prefix_len is None:
+            continue
+        try:
+            prefixes.append(ipaddress.ip_network(f"{cidr_ip}/{prefix_len}", strict=False))
+        except ValueError:
+            continue
+    return prefixes
+
+
+def _is_orchestrator_allow_ip(value: str) -> bool:
+    """Exclude VeloCloud/Orchestrator link-local allow entries from overlay peer checks."""
+    try:
+        if "/" in str(value):
+            net = ipaddress.ip_network(value, strict=False)
+            return any(net.subnet_of(orch) for orch in _ORCHESTRATOR_ALLOW_NETS)
+        ip = ipaddress.ip_address(value)
+        return any(ip in orch for orch in _ORCHESTRATOR_ALLOW_NETS)
+    except ValueError:
+        return False
+
+
+def _allow_overlaps_prefix(allow_entry: str, peer_prefix) -> bool:
+    try:
+        if "/" in str(allow_entry):
+            allow_net = ipaddress.ip_network(allow_entry, strict=False)
+        else:
+            allow_net = ipaddress.ip_network(f"{allow_entry}/32", strict=False)
+    except ValueError:
+        return False
+    if peer_prefix.version != allow_net.version:
+        return False
+    return peer_prefix.overlaps(allow_net)
+
+
+def _profile_has_branch_to_branch(profile_cfg: dict, edge_cfg: dict) -> bool:
+    """True when effective config has Cloud VPN branch-to-branch on any segment."""
+    effective = _effective_config(profile_cfg, edge_cfg)
+    for seg in effective.get("segments") or []:
+        if not isinstance(seg, dict):
+            continue
+        vpn = seg.get("vpn") or {}
+        if vpn.get("enabled") and vpn.get("edgeToEdge"):
+            return True
+    return False
+
+
+def build_overlay_peer_prefixes(combined_records: list) -> dict:
+    """
+    Per edge: LAN prefixes of sibling edges on the same profile (potential overlay sources).
+    Returns {edgeName: [{"prefix": ip_network, "peerEdge": str}, ...]}.
+    """
+    by_profile = {}
+    edge_effective = {}
+    for rec in combined_records:
+        en = rec.get("edgeName")
+        pid = rec.get("profileNumericId")
+        if not en:
+            continue
+        by_profile.setdefault(pid, []).append(en)
+        edge_effective[en] = _effective_config(
+            rec.get("profileConfig") or {},
+            rec.get("edgeConfig") or {},
+        )
+
+    result = {}
+    for rec in combined_records:
+        en = rec.get("edgeName")
+        pid = rec.get("profileNumericId")
+        peers = []
+        for peer_name in by_profile.get(pid, []):
+            if peer_name == en:
+                continue
+            for prefix in _extract_lan_prefixes(edge_effective.get(peer_name, {})):
+                peers.append({"prefix": prefix, "peerEdge": peer_name})
+        result[en] = peers
+    return result
+
+
+def analyse_overlay_management_access(
+    ctx: dict,
+    firewall_cfg: dict,
+    profile_cfg: dict,
+    edge_cfg: dict,
+    peer_prefixes: list,
+    findings: list,
+) -> None:
+    """
+    [Net] Overlay to Management Access (partial) — config-only phase 1.
+    Flags management allow lists that overlap same-profile peer LAN prefixes, or
+    unrestricted management services while branch-to-branch VPN is enabled.
+    """
+    if not isinstance(firewall_cfg, dict):
+        return
+    services = firewall_cfg.get("services") or {}
+    if not isinstance(services, dict):
+        return
+
+    branch_to_branch = _profile_has_branch_to_branch(profile_cfg, edge_cfg)
+
+    for svc_name in _EDGE_ACCESS_SERVICES:
+        svc = services.get(svc_name)
+        if not isinstance(svc, dict) or not svc.get("enabled"):
+            continue
+        allow_ips = svc.get("allowSelectedIp") or []
+
+        if not allow_ips and branch_to_branch:
+            findings.append(_finding(
+                ctx, "edge_access", "medium",
+                f"Edge management service {svc_name} unrestricted with branch-to-branch VPN enabled",
+                f"firewall.services.{svc_name}",
+                json.dumps({
+                    "service": svc_name,
+                    "allowSelectedIp": allow_ips,
+                    "branchToBranch": True,
+                }, ensure_ascii=False),
+                "Restrict management access to NOC/jump sources not reachable from overlay peers.",
+                methodology_ref="[Net] Overlay to Management Access",
+            ))
+            continue
+
+        for allow in allow_ips:
+            if _is_orchestrator_allow_ip(allow):
+                continue
+            for peer in peer_prefixes or []:
+                prefix = peer.get("prefix")
+                if prefix is None:
+                    continue
+                if _allow_overlaps_prefix(allow, prefix):
+                    findings.append(_finding(
+                        ctx, "edge_access", "medium",
+                        f"Edge management service {svc_name} allow list overlaps "
+                        f"overlay-routable peer prefix",
+                        f"firewall.services.{svc_name}.allowSelectedIp",
+                        json.dumps({
+                            "service": svc_name,
+                            "allow": allow,
+                            "peerEdge": peer.get("peerEdge"),
+                            "peerPrefix": str(prefix),
+                        }, ensure_ascii=False),
+                        "Limit management allow lists to sources not routable from remote branches.",
+                        methodology_ref="[Net] Overlay to Management Access",
+                    ))
+                    break
 
 
 def analyse_firewall_logging(
@@ -1215,6 +1874,60 @@ def analyse_segment_isolation(
                 ))
 
 
+def _vpn_edge_to_edge_enabled(vpn: dict) -> bool:
+    return isinstance(vpn, dict) and bool(vpn.get("edgeToEdge"))
+
+
+def analyse_edge_to_edge_communication(
+    ctx: dict,
+    profile_cfg: dict,
+    edge_cfg: dict,
+    findings: list,
+    profile_modules: dict = None,
+    profile_fw: dict = None,
+    edge_fw: dict = None,
+) -> None:
+    """
+    [Net] Edge-to-Edge Communication — edge must not widen branch-to-branch VPN vs profile.
+    Profile-level mesh VPN is covered by [Net] Segment Isolation.
+    """
+    if not isinstance(profile_cfg, dict) or not isinstance(edge_cfg, dict):
+        return
+
+    effective = _effective_config(profile_cfg, edge_cfg)
+    name_lookup = _build_segment_name_lookup(
+        profile_modules, profile_cfg, profile_fw, edge_fw,
+    )
+    profile_seg_by_key = {
+        _segment_key(seg): seg
+        for seg in (profile_cfg.get("segments") or [])
+        if isinstance(seg, dict) and _segment_key(seg)
+    }
+
+    for seg in effective.get("segments") or []:
+        if not isinstance(seg, dict):
+            continue
+        prof_seg = profile_seg_by_key.get(_segment_key(seg))
+        if not prof_seg:
+            continue
+        label = _segment_display_name(seg, name_lookup)
+        profile_e2e = _vpn_edge_to_edge_enabled(prof_seg.get("vpn") or {})
+        effective_e2e = _vpn_edge_to_edge_enabled(seg.get("vpn") or {})
+        if not profile_e2e and effective_e2e:
+            findings.append(_finding(
+                ctx, "segmentation", "high",
+                "Edge override enables branch-to-branch VPN wider than profile baseline",
+                f"segments[{label}].vpn.edgeToEdge",
+                json.dumps({
+                    "segment": label,
+                    "profileEdgeToEdge": profile_e2e,
+                    "effectiveEdgeToEdge": effective_e2e,
+                }, ensure_ascii=False),
+                "Remove edge-level branch-to-branch widening or update profile baseline with approval.",
+                methodology_ref="[Net] Edge-to-Edge Communication",
+            ))
+
+
 def analyse_segmentation(ctx: dict, profile_cfg: dict, edge_cfg: dict, findings: list) -> None:
     if not isinstance(profile_cfg, dict) or not isinstance(edge_cfg, dict):
         return
@@ -1257,20 +1970,6 @@ def analyse_segmentation(ctx: dict, profile_cfg: dict, edge_cfg: dict, findings:
         p_seg = p_seg_map[seg_key]
         e_seg = e_seg_map[seg_key]
         seg_label = _segment_name(p_seg)
-
-        # VPN edge-to-edge
-        p_e2e = get_nested(p_seg, "vpn", "edgeToEdge")
-        e_e2e = get_nested(e_seg, "vpn", "edgeToEdge")
-        if p_e2e is not None and e_e2e is not None and p_e2e != e_e2e:
-            findings.append(_finding(
-                ctx, "segmentation", "high",
-                "VPN edge-to-edge setting differs from profile baseline",
-                f"segments[{seg_label}].vpn.edgeToEdge",
-                f"profile={p_e2e}, edge={e_e2e}",
-                "Review whether disabling edge-to-edge VPN on this segment was intentional. "
-                "Unintended changes may affect traffic isolation.",
-                methodology_ref="[Net] Edge-to-Edge Communication",
-            ))
 
         # VPN edge-to-datacentre
         p_e2dc = get_nested(p_seg, "vpn", "edgeToDataCenter")
@@ -2280,23 +2979,611 @@ def analyse_gateway_assignments(
             ))
 
 
-def analyse_vpn_crypto(ctx: dict, control_plane_cfg: dict, findings: list) -> None:
-    """[VPN] Encryption Strength — partial automation from controlPlane."""
-    if not isinstance(control_plane_cfg, dict):
-        return
-    vpn = control_plane_cfg.get("vpn") or {}
-    if isinstance(vpn, dict):
-        for key, val in vpn.items():
-            if isinstance(val, str) and val.lower() in {"des", "3des", "md5", "sha1"}:
+_CERT_EXPIRY_WARN_DAYS = 30
+_CERT_MAX_KEY_AGE_DAYS = 120
+_CERT_ROTATION_GAP_DAYS = 120
+_CERT_HA_REBUILD_TOLERANCE_DAYS = 7
+_WEAK_VPN_CRYPTO_VALUES = {
+    "des", "3des", "md5", "sha1", "rc4", "null", "none", "disabled", "psk",
+}
+_ACCEPTABLE_VPN_ENCRYPTION_PROTOCOLS = {
+    "GROUP_IPSEC", "IPSEC", "AES256", "AES128", "AES-256", "AES-128",
+}
+
+
+def _parse_vco_timestamp(value) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _sanitize_cert_records(certs: list) -> list:
+    sanitized = []
+    for cert in certs:
+        if not isinstance(cert, dict):
+            continue
+        sanitized.append({k: v for k, v in cert.items() if k != "certificate"})
+    return sanitized
+
+
+def _walk_weak_vpn_crypto(obj, path: str = "") -> list:
+    hits = []
+    if isinstance(obj, dict):
+        for key, val in obj.items():
+            child = f"{path}.{key}" if path else key
+            if isinstance(val, str) and val.lower() in _WEAK_VPN_CRYPTO_VALUES:
+                hits.append((child, val))
+            else:
+                hits.extend(_walk_weak_vpn_crypto(val, child))
+    elif isinstance(obj, list):
+        for idx, val in enumerate(obj):
+            hits.extend(_walk_weak_vpn_crypto(val, f"{path}[{idx}]"))
+    return hits
+
+
+def _certs_by_serial(certs: list) -> dict:
+    grouped = {}
+    for cert in certs:
+        if not isinstance(cert, dict):
+            continue
+        serial = cert.get("edgeSerialNumber") or "unknown"
+        grouped.setdefault(serial, []).append(cert)
+    return grouped
+
+
+def _latest_cert(certs: list) -> dict | None:
+    if not certs:
+        return None
+    return max(
+        certs,
+        key=lambda c: _parse_vco_timestamp(c.get("validTo"))
+        or datetime.min.replace(tzinfo=timezone.utc),
+    )
+
+
+def analyse_vpn_encryption_strength(
+    ctx: dict,
+    control_plane_cfg: dict,
+    device_settings_cfg: dict,
+    findings: list,
+) -> None:
+    """[VPN] Encryption Strength — controlPlane VPN protocol + weak crypto scan."""
+    if isinstance(control_plane_cfg, dict):
+        for field_path, val in _walk_weak_vpn_crypto(
+            control_plane_cfg.get("vpn") or {}, "controlPlane.vpn",
+        ):
+            findings.append(_finding(
+                ctx, "vpn_crypto", "high",
+                f"Weak VPN crypto setting: {field_path}={val}",
+                field_path,
+                f"{field_path}={val}",
+                "Upgrade to modern cipher suites and hashing algorithms.",
+                methodology_ref="[VPN] Encryption Strength",
+            ))
+
+        for idx, seg in enumerate(control_plane_cfg.get("segments") or []):
+            if not isinstance(seg, dict):
+                continue
+            vpn = seg.get("vpn") or {}
+            if not vpn.get("enabled") or not vpn.get("edgeToEdge"):
+                continue
+            seg_name = seg.get("name") or seg.get("segmentLogicalId") or f"segment[{idx}]"
+            proto = (vpn.get("edgeToEdgeDetail") or {}).get("encryptionProtocol")
+            if not proto:
+                findings.append(_finding(
+                    ctx, "vpn_crypto", "low",
+                    f"Branch-to-branch VPN enabled without declared encryption protocol ({seg_name})",
+                    f"controlPlane.segments[{seg_name}].vpn.edgeToEdgeDetail.encryptionProtocol",
+                    json.dumps({"segment": seg_name, "edgeToEdge": True}, ensure_ascii=False),
+                    "Confirm overlay VPN uses strong encryption (e.g. GROUP_IPSEC).",
+                    methodology_ref="[VPN] Encryption Strength",
+                ))
+            elif str(proto).upper() not in _ACCEPTABLE_VPN_ENCRYPTION_PROTOCOLS:
+                sev = "high" if str(proto).lower() in _WEAK_VPN_CRYPTO_VALUES else "medium"
+                findings.append(_finding(
+                    ctx, "vpn_crypto", sev,
+                    f"Non-standard VPN encryption protocol on segment {seg_name}: {proto}",
+                    f"controlPlane.segments[{seg_name}].vpn.edgeToEdgeDetail.encryptionProtocol",
+                    f"encryptionProtocol={proto}",
+                    "Use VeloCloud default strong overlay encryption (GROUP_IPSEC).",
+                    methodology_ref="[VPN] Encryption Strength",
+                ))
+
+    if isinstance(device_settings_cfg, dict):
+        for idx, iface in enumerate(device_settings_cfg.get("routedInterfaces") or []):
+            if not isinstance(iface, dict):
+                continue
+            if iface.get("edgeToEdgeEncryption") is False:
                 findings.append(_finding(
                     ctx, "vpn_crypto", "high",
-                    f"Weak VPN crypto setting: {key}={val}",
-                    f"controlPlane.vpn.{key}",
-                    f"{key}={val}",
-                    "Upgrade to modern cipher suites and hashing algorithms.",
+                    f"Edge-to-edge encryption disabled on interface {iface.get('name', idx)}",
+                    f"deviceSettings.routedInterfaces[{idx}].edgeToEdgeEncryption",
+                    json.dumps(
+                        {"interface": iface.get("name"), "edgeToEdgeEncryption": False},
+                        ensure_ascii=False,
+                    ),
+                    "Enable edge-to-edge encryption on routed interfaces.",
                     methodology_ref="[VPN] Encryption Strength",
-                    automation="partial",
                 ))
+
+
+def analyse_vpn_certificate_validation(ctx: dict, certs: list, findings: list) -> None:
+    """[VPN] Certificate Validation — edge/getEdgeCertificates presence and expiry."""
+    sanitized = [c for c in (certs or []) if isinstance(c, dict)]
+    if not sanitized:
+        findings.append(_finding(
+            ctx, "vpn_crypto", "high",
+            "No edge certificates found (certificate-based VPN auth not evidenced)",
+            "edge/getEdgeCertificates",
+            "empty certificate list",
+            "Ensure edges use VCO-issued certificates for overlay authentication.",
+            methodology_ref="[VPN] Certificate Validation",
+        ))
+        return
+
+    now = datetime.now(timezone.utc)
+    for serial, serial_certs in _certs_by_serial(sanitized).items():
+        latest = _latest_cert(serial_certs)
+        if not latest:
+            continue
+        valid_to = _parse_vco_timestamp(latest.get("validTo"))
+        if not valid_to:
+            findings.append(_finding(
+                ctx, "vpn_crypto", "medium",
+                f"Edge certificate for serial {serial} missing validTo metadata",
+                "edge/getEdgeCertificates",
+                json.dumps(_sanitize_cert_records([latest])[0], ensure_ascii=False),
+                "Verify certificate validity in Orchestrator certificate management.",
+                methodology_ref="[VPN] Certificate Validation",
+            ))
+            continue
+
+        days_left = (valid_to - now).days
+        if days_left < 0:
+            findings.append(_finding(
+                ctx, "vpn_crypto", "high",
+                f"Edge certificate expired for serial {serial}",
+                "edge/getEdgeCertificates",
+                json.dumps({
+                    "edgeSerialNumber": serial,
+                    "validFrom": latest.get("validFrom"),
+                    "validTo": latest.get("validTo"),
+                    "daysExpired": abs(days_left),
+                }, ensure_ascii=False),
+                "Renew or redeploy edge certificates before overlay authentication fails.",
+                methodology_ref="[VPN] Certificate Validation",
+            ))
+        elif days_left <= _CERT_EXPIRY_WARN_DAYS:
+            findings.append(_finding(
+                ctx, "vpn_crypto", "medium",
+                f"Edge certificate expiring within {_CERT_EXPIRY_WARN_DAYS} days for serial {serial}",
+                "edge/getEdgeCertificates",
+                json.dumps({
+                    "edgeSerialNumber": serial,
+                    "validTo": latest.get("validTo"),
+                    "daysRemaining": days_left,
+                }, ensure_ascii=False),
+                "Confirm automatic certificate renewal is scheduled.",
+                methodology_ref="[VPN] Certificate Validation",
+            ))
+        elif not latest.get("authorityKeyId"):
+            findings.append(_finding(
+                ctx, "vpn_crypto", "low",
+                f"Edge certificate for serial {serial} lacks authorityKeyId metadata",
+                "edge/getEdgeCertificates",
+                json.dumps(_sanitize_cert_records([latest])[0], ensure_ascii=False),
+                "Confirm certificate is issued by the enterprise CA.",
+                methodology_ref="[VPN] Certificate Validation",
+            ))
+
+
+def _ha_cert_context(ctx: dict) -> tuple:
+    """Return (is_enhanced_ha, set of physical serial numbers for the HA pair)."""
+    portal = ctx.get("edgePortalRecord") or {}
+    ha = portal.get("ha") or {}
+    ha_type = str(ha.get("type", "")).upper()
+    serials = set()
+    for key in ("serialNumber", "haSerialNumber"):
+        val = portal.get(key)
+        if val:
+            serials.add(str(val))
+    is_enhanced = ha_type in {"ACTIVE_STANDBY", "ACTIVE_ACTIVE"} and len(serials) >= 2
+    return is_enhanced, serials
+
+
+def _ordered_certs(certs: list) -> list:
+    return sorted(
+        certs,
+        key=lambda c: _parse_vco_timestamp(c.get("validFrom"))
+        or datetime.min.replace(tzinfo=timezone.utc),
+    )
+
+
+def _current_rotation_cluster(ordered: list) -> list:
+    """
+    Certificates in the current renewal cluster — everything after the last
+    major gap (> _CERT_ROTATION_GAP_DAYS) in the serial's history.
+    """
+    if not ordered:
+        return []
+    cluster_start = 0
+    for idx, (prev, curr) in enumerate(zip(ordered, ordered[1:])):
+        prev_to = _parse_vco_timestamp(prev.get("validTo"))
+        curr_from = _parse_vco_timestamp(curr.get("validFrom"))
+        if prev_to and curr_from and (curr_from - prev_to).days > _CERT_ROTATION_GAP_DAYS:
+            cluster_start = idx + 1
+    return ordered[cluster_start:]
+
+
+def _cluster_start_time(ordered: list) -> datetime | None:
+    cluster = _current_rotation_cluster(ordered)
+    if not cluster:
+        return None
+    return _parse_vco_timestamp(cluster[0].get("validFrom"))
+
+
+def _ha_coordinated_rebuild(certs_by_serial: dict, ha_serials: set) -> bool:
+    """
+    True when all enhanced-HA member serials began their current renewal cluster
+    within a short window (typical pair re-enrollment / rebuild event).
+    """
+    starts = []
+    for serial in ha_serials:
+        serial_certs = certs_by_serial.get(serial)
+        if not serial_certs:
+            return False
+        start = _cluster_start_time(_ordered_certs(serial_certs))
+        if not start:
+            return False
+        starts.append(start)
+    if len(starts) < 2:
+        return False
+    return (max(starts) - min(starts)).days <= _CERT_HA_REBUILD_TOLERANCE_DAYS
+
+
+def _cert_rotation_gaps(ordered: list) -> list:
+    gaps = []
+    for prev, curr in zip(ordered, ordered[1:]):
+        prev_to = _parse_vco_timestamp(prev.get("validTo"))
+        curr_from = _parse_vco_timestamp(curr.get("validFrom"))
+        if prev_to and curr_from:
+            gaps.append({
+                "gapDays": (curr_from - prev_to).days,
+                "previousValidTo": prev.get("validTo"),
+                "nextValidFrom": curr.get("validFrom"),
+            })
+    return gaps
+
+
+def _latest_cert_health(latest: dict, now: datetime) -> dict:
+    valid_to = _parse_vco_timestamp(latest.get("validTo"))
+    valid_from = _parse_vco_timestamp(latest.get("validFrom"))
+    expired = bool(valid_to and valid_to < now)
+    key_age_days = (now - valid_from).days if valid_from else None
+    stale = bool(key_age_days is not None and key_age_days > _CERT_MAX_KEY_AGE_DAYS)
+    return {
+        "expired": expired,
+        "stale": stale,
+        "unhealthy": expired or stale,
+        "keyAgeDays": key_age_days,
+    }
+
+
+def analyse_vpn_key_rotation(ctx: dict, certs: list, findings: list) -> None:
+    """
+    [VPN] Key Rotation — certificate renewal history from edge/getEdgeCertificates.
+
+    Flags current rotation problems only:
+      • latest cert stale (>120 days) or expired
+      • gaps >120 days within the current renewal cluster (not historical)
+    Enhanced HA: suppresses historical pair-rebuild gaps when member serials
+    re-enrolled together; still flags unhealthy latest material.
+    """
+    sanitized = [c for c in (certs or []) if isinstance(c, dict)]
+    if not sanitized:
+        return
+
+    now = datetime.now(timezone.utc)
+    certs_by_serial = _certs_by_serial(sanitized)
+    ha_enhanced, ha_serials = _ha_cert_context(ctx)
+    ha_rebuild = (
+        _ha_coordinated_rebuild(certs_by_serial, ha_serials)
+        if ha_enhanced else False
+    )
+
+    for serial, serial_certs in certs_by_serial.items():
+        ordered = _ordered_certs(serial_certs)
+        latest = _latest_cert(ordered)
+        if not latest:
+            continue
+
+        health = _latest_cert_health(latest, now)
+        is_ha_member = ha_enhanced and serial in ha_serials
+
+        if len(ordered) < 2:
+            if health["unhealthy"]:
+                findings.append(_finding(
+                    ctx, "vpn_crypto", "medium",
+                    f"No certificate rotation history and latest cert unhealthy for serial {serial}",
+                    "edge/getEdgeCertificates",
+                    json.dumps({
+                        "edgeSerialNumber": serial,
+                        "certificateCount": len(ordered),
+                        "validTo": latest.get("validTo"),
+                        "keyAgeDays": health.get("keyAgeDays"),
+                    }, ensure_ascii=False),
+                    "Verify VeloCloud automatic certificate renewal is functioning.",
+                    methodology_ref="[VPN] Key Rotation",
+                ))
+            continue
+
+        if not health["unhealthy"]:
+            continue
+
+        if health["stale"]:
+            findings.append(_finding(
+                ctx, "vpn_crypto", "high",
+                f"Edge certificate/key material older than {_CERT_MAX_KEY_AGE_DAYS} days "
+                f"for serial {serial}",
+                "edge/getEdgeCertificates",
+                json.dumps({
+                    "edgeSerialNumber": serial,
+                    "validFrom": latest.get("validFrom"),
+                    "keyAgeDays": health["keyAgeDays"],
+                }, ensure_ascii=False),
+                "Trigger certificate renewal or investigate failed auto-rotation.",
+                methodology_ref="[VPN] Key Rotation",
+            ))
+
+        cluster = _current_rotation_cluster(ordered)
+        had_historical_rebuild = len(cluster) < len(ordered)
+
+        if is_ha_member and ha_rebuild and had_historical_rebuild:
+            continue
+
+        gap_found = False
+        for gap in _cert_rotation_gaps(cluster):
+            if gap["gapDays"] > _CERT_ROTATION_GAP_DAYS:
+                findings.append(_finding(
+                    ctx, "vpn_crypto", "medium",
+                    f"Rotation gap ({gap['gapDays']} days) in current renewal period for serial {serial}",
+                    "edge/getEdgeCertificates",
+                    json.dumps({
+                        "edgeSerialNumber": serial,
+                        "previousValidTo": gap["previousValidTo"],
+                        "nextValidFrom": gap["nextValidFrom"],
+                        "gapDays": gap["gapDays"],
+                        "clusterSize": len(cluster),
+                    }, ensure_ascii=False),
+                    "Investigate delayed certificate renewal in the active rotation window.",
+                    methodology_ref="[VPN] Key Rotation",
+                ))
+                gap_found = True
+                break
+        if not gap_found and len(cluster) < 2 and health["unhealthy"]:
+            findings.append(_finding(
+                ctx, "vpn_crypto", "medium",
+                f"No certificate renewals in current rotation period for serial {serial}",
+                "edge/getEdgeCertificates",
+                json.dumps({
+                    "edgeSerialNumber": serial,
+                    "clusterStart": cluster[0].get("validFrom") if cluster else None,
+                    "clusterSize": len(cluster),
+                    "validTo": latest.get("validTo"),
+                }, ensure_ascii=False),
+                "Confirm automatic certificate renewal is active for this edge.",
+                methodology_ref="[VPN] Key Rotation",
+            ))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# MODULE 10 — ENTERPRISE MANAGEMENT (users, API tokens, auth mode)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _sanitize_enterprise_user(user: dict) -> dict:
+    if not isinstance(user, dict):
+        return {}
+    return {k: v for k, v in user.items() if k not in {"password", "salt"}}
+
+
+def _sanitize_api_token_record(token: dict) -> dict:
+    if not isinstance(token, dict):
+        return {}
+    return {k: v for k, v in token.items() if k.lower() != "token"}
+
+
+def _api_token_active(token: dict) -> bool:
+    if not isinstance(token, dict):
+        return False
+    if token.get("isRevoked"):
+        return False
+    return str(token.get("state", "")).upper() not in {"REVOKED", "DISABLED"}
+
+
+def analyse_token_enumeration(ctx: dict, tokens: list, findings: list) -> None:
+    """
+    [Mgmt] Token Enumeration — inventory via enterprise/getApiTokens.
+    Emits assisted inventory plus flags for expired or non-expiring active tokens.
+    """
+    token_list = [t for t in (tokens or []) if isinstance(t, dict)]
+    active = [t for t in token_list if _api_token_active(t)]
+    now = datetime.now(timezone.utc)
+
+    inventory = [
+        {
+            "name": t.get("name"),
+            "state": t.get("state"),
+            "expiration": t.get("expiration"),
+            "created": t.get("created"),
+            "downloaded": t.get("downloaded"),
+            "createdForEnterpriseUserId": t.get("createdForEnterpriseUserId"),
+        }
+        for t in token_list
+    ]
+    findings.append(_finding(
+        ctx, "mgmt_tokens", "info",
+        f"Enterprise API token inventory: {len(active)} active, {len(token_list)} total",
+        "enterprise/getApiTokens",
+        json.dumps(inventory, ensure_ascii=False),
+        "Review each API token for least privilege, owner, and expiry.",
+        methodology_ref="[Mgmt] Token Enumeration",
+        automation="partial",
+    ))
+
+    for token in token_list:
+        if not _api_token_active(token):
+            continue
+        name = token.get("name") or token.get("tokenUuid") or str(token.get("id"))
+        expiration = _parse_vco_timestamp(token.get("expiration"))
+        if not expiration:
+            findings.append(_finding(
+                ctx, "mgmt_tokens", "medium",
+                f"Active API token '{name}' has no expiration date",
+                f"enterprise/getApiTokens[{token.get('id')}].expiration",
+                json.dumps(_sanitize_api_token_record(token), ensure_ascii=False),
+                "Set an expiry on API tokens and rotate regularly.",
+                methodology_ref="[Mgmt] Token Enumeration",
+                automation="partial",
+            ))
+        elif expiration < now:
+            findings.append(_finding(
+                ctx, "mgmt_tokens", "high",
+                f"Active API token '{name}' is past expiration",
+                f"enterprise/getApiTokens[{token.get('id')}].expiration",
+                json.dumps({
+                    "name": name,
+                    "expiration": token.get("expiration"),
+                    "state": token.get("state"),
+                }, ensure_ascii=False),
+                "Revoke expired API tokens.",
+                methodology_ref="[Mgmt] Token Enumeration",
+                automation="partial",
+            ))
+
+
+def analyse_enterprise_auth_mode(
+    ctx: dict, enterprise: dict, users: list, findings: list,
+) -> None:
+    """
+    [Mgmt] Enterprise Authentication Mode — infer native vs federated from
+    enterprise domain and user isNative flags (SAML/LDAP detail not in API).
+    """
+    user_list = [u for u in (users or []) if isinstance(u, dict)]
+    if not user_list:
+        findings.append(_finding(
+            ctx, "mgmt_auth", "medium",
+            "No enterprise users returned from Orchestrator API",
+            "enterprise/getEnterpriseUsers",
+            "empty user list",
+            "Verify API token can read enterprise user configuration.",
+            methodology_ref="[Mgmt] Enterprise Authentication Mode",
+            automation="partial",
+        ))
+        return
+
+    domain = (enterprise or {}).get("domain")
+    pki_mode = (enterprise or {}).get("endpointPkiMode")
+    native_count = sum(1 for u in user_list if u.get("isNative"))
+    federated_count = len(user_list) - native_count
+
+    if domain or federated_count > 0:
+        if native_count > 0:
+            mode = "MIXED"
+        else:
+            mode = "FEDERATED"
+    else:
+        mode = "NATIVE"
+
+    evidence = {
+        "detectedMode": mode,
+        "domain": domain,
+        "endpointPkiMode": pki_mode,
+        "nativeUsers": native_count,
+        "federatedUsers": federated_count,
+        "totalUsers": len(user_list),
+    }
+
+    if mode == "NATIVE":
+        findings.append(_finding(
+            ctx, "mgmt_auth", "low",
+            "Enterprise authentication mode is native VeloCloud (no IdP domain configured)",
+            "enterprise/getEnterprise.domain",
+            json.dumps(evidence, ensure_ascii=False),
+            "Confirm native authentication is acceptable or migrate to SAML/LDAP.",
+            methodology_ref="[Mgmt] Enterprise Authentication Mode",
+            automation="partial",
+        ))
+    elif mode == "MIXED":
+        findings.append(_finding(
+            ctx, "mgmt_auth", "low",
+            "Enterprise has mixed native and federated user accounts",
+            "enterprise/getEnterpriseUsers.isNative",
+            json.dumps(evidence, ensure_ascii=False),
+            "Review whether native accounts are still required.",
+            methodology_ref="[Mgmt] Enterprise Authentication Mode",
+            automation="partial",
+        ))
+
+
+def analyse_dormant_users(ctx: dict, users: list, findings: list) -> None:
+    """[Mgmt] Dormant User Account Review — lastLogin age and inactive accounts."""
+    now = datetime.now(timezone.utc)
+    for user in users or []:
+        if not isinstance(user, dict):
+            continue
+        username = user.get("username") or user.get("email") or str(user.get("id"))
+
+        if not user.get("isActive"):
+            findings.append(_finding(
+                ctx, "mgmt_users", "low",
+                f"Inactive enterprise user account still present: {username}",
+                f"enterprise/getEnterpriseUsers[{user.get('id')}].isActive",
+                json.dumps(_sanitize_enterprise_user(user), ensure_ascii=False)[:300],
+                "Remove or formally decommission dormant accounts.",
+                methodology_ref="[Mgmt] Dormant User Account Review",
+            ))
+            continue
+
+        if user.get("isServiceAccount"):
+            continue
+
+        last_login = _parse_vco_timestamp(user.get("lastLogin"))
+        if not last_login:
+            findings.append(_finding(
+                ctx, "mgmt_users", "medium",
+                f"Active enterprise user has never logged in: {username}",
+                f"enterprise/getEnterpriseUsers[{user.get('id')}].lastLogin",
+                json.dumps({
+                    "username": username,
+                    "created": user.get("created"),
+                    "roleName": user.get("roleName"),
+                    "accessLevel": user.get("accessLevel"),
+                }, ensure_ascii=False),
+                "Confirm account is required or disable until onboarded.",
+                methodology_ref="[Mgmt] Dormant User Account Review",
+            ))
+            continue
+
+        idle_days = (now - last_login).days
+        if idle_days >= DORMANT_USER_DAYS:
+            severity = "high" if idle_days >= 180 else "medium"
+            findings.append(_finding(
+                ctx, "mgmt_users", severity,
+                f"Enterprise user dormant {idle_days} days: {username}",
+                f"enterprise/getEnterpriseUsers[{user.get('id')}].lastLogin",
+                json.dumps({
+                    "username": username,
+                    "lastLogin": user.get("lastLogin"),
+                    "idleDays": idle_days,
+                    "roleName": user.get("roleName"),
+                    "accessLevel": user.get("accessLevel"),
+                }, ensure_ascii=False),
+                f"Review account necessity (threshold {DORMANT_USER_DAYS} days).",
+                methodology_ref="[Mgmt] Dormant User Account Review",
+            ))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2309,27 +3596,27 @@ _AUTOMATION_TIER_BY_TITLE = {
     "[Mgmt] API Token Expiry": "manual",
     "[Mgmt] API Token Privileges": "manual",
     "[Mgmt] Orchestrator Exposure": "manual",
-    "[Mgmt] Token Enumeration": "manual",
-    "[Mgmt] Enterprise Authentication Mode": "manual",
-    "[Mgmt] Dormant User Account Review": "manual",
-    "[Net] Overlay to Management Access": "manual",
+    "[Mgmt] Token Enumeration": "partial",
+    "[Mgmt] Enterprise Authentication Mode": "partial",
+    "[Mgmt] Dormant User Account Review": "automated",
+    "[Net] Overlay to Management Access": "partial",
     "[Net] Gateway Assignment Review": "partial",
     "[Net] Route Table Review": "partial",
     "[Net] Segment Isolation": "automated",
     "[Net] Default Segment Behaviour": "automated",
     "[Net] Business Policy Override": "automated",
-    "[Net] Edge-to-Edge Communication": "partial",
+    "[Net] Edge-to-Edge Communication": "automated",
     "[Net] Overlay Traffic Encryption": "automated",
     "[Net] DNS Configuration": "automated",
     "[FW] Default Deny": "automated",
     "[FW] Rule Scope": "automated",
     "[FW] NAT Exposure": "automated",
-    "[FW] Segment Enforcement": "manual",
+    "[FW] Segment Enforcement": "partial",
     "[FW] Edge Local Access Restrictions": "automated",
     "[FW] Firewall Event Logging": "automated",
-    "[VPN] Encryption Strength": "partial",
-    "[VPN] Certificate Validation": "manual",
-    "[VPN] Key Rotation": "manual",
+    "[VPN] Encryption Strength": "automated",
+    "[VPN] Certificate Validation": "automated",
+    "[VPN] Key Rotation": "automated",
     "[Monitoring] Central Logging": "automated",
     "[Monitoring] Admin Activity Logs": "partial",
     "[Monitoring] Event Review": "partial",
@@ -2361,15 +3648,22 @@ _SCRIPT_MODULE_BY_TITLE = {
     "[Net] Segment Isolation": "analyse_segment_isolation",
     "[Net] Default Segment Behaviour": "analyse_business_policy",
     "[Net] Business Policy Override": "analyse_business_policy",
-    "[Net] Edge-to-Edge Communication": "analyse_segmentation",
+    "[Net] Edge-to-Edge Communication": "analyse_edge_to_edge_communication",
+    "[Net] Overlay to Management Access": "analyse_overlay_management_access",
     "[Net] Overlay Traffic Encryption": "analyse_device_hardening, analyse_business_policy",
     "[Net] DNS Configuration": "analyse_dns",
     "[FW] Default Deny": "analyse_firewall_rules",
     "[FW] Rule Scope": "analyse_firewall_rules",
     "[FW] NAT Exposure": "analyse_nat_exposure",
+    "[FW] Segment Enforcement": "analyse_segment_enforcement",
     "[FW] Edge Local Access Restrictions": "analyse_edge_access",
     "[FW] Firewall Event Logging": "analyse_firewall_logging",
-    "[VPN] Encryption Strength": "analyse_vpn_crypto",
+    "[VPN] Encryption Strength": "analyse_vpn_encryption_strength",
+    "[VPN] Certificate Validation": "analyse_vpn_certificate_validation",
+    "[VPN] Key Rotation": "analyse_vpn_key_rotation",
+    "[Mgmt] Token Enumeration": "analyse_token_enumeration",
+    "[Mgmt] Enterprise Authentication Mode": "analyse_enterprise_auth_mode",
+    "[Mgmt] Dormant User Account Review": "analyse_dormant_users",
     "[Monitoring] Central Logging": "analyse_device_hardening",
     "[Monitoring] Admin Activity Logs": "analyse_enterprise_events",
     "[Monitoring] Event Review": "analyse_enterprise_events",
@@ -2397,6 +3691,11 @@ _TITLE_INFERENCE = [
     ("default action", "[FW] Default Deny"),
     ("Stateful firewall", "[FW] Default Deny"),
     ("Firewall disabled", "[FW] Default Deny"),
+    ("Segment firewall disabled on edge", "[FW] Segment Enforcement"),
+    ("Sensitive VRF segment", "[FW] Segment Enforcement"),
+    ("Edge segment firewall diverges", "[FW] Segment Enforcement"),
+    ("permits cross-segment flow", "[FW] Segment Enforcement"),
+    ("Inter-segment firewall allow", "[FW] Segment Enforcement"),
     ("NTP not", "[System] NTP Time Synchronisation"),
     ("Syslog forwarding", "[Monitoring] Central Logging"),
     ("SNMPv2c", "[System] SNMP Hardening"),
@@ -2409,8 +3708,12 @@ _TITLE_INFERENCE = [
     ("not contacted", "[System] Inactive Edge Review"),
     ("activation state", "[System] Inactive Edge Review"),
     ("VPN edge-to-edge", "[Net] Edge-to-Edge Communication"),
+    ("branch-to-branch VPN wider than profile", "[Net] Edge-to-Edge Communication"),
     ("Branch-to-branch VPN enabled without segment isolation", "[Net] Segment Isolation"),
     ("Edge override enables branch-to-branch VPN without isolation", "[Net] Segment Isolation"),
+    ("allow list overlaps overlay-routable peer prefix", "[Net] Overlay to Management Access"),
+    ("unrestricted with branch-to-branch VPN enabled", "[Net] Overlay to Management Access"),
+    ("management service", "[FW] Edge Local Access Restrictions"),
     ("segment missing", "[Isolation] Profile Inheritance"),
     ("segment not defined", "[Isolation] Profile Inheritance"),
     ("differs from profile", "[System] Config Consistency Real"),
@@ -2420,12 +3723,28 @@ _TITLE_INFERENCE = [
     ("USER_LOGIN_FAILURE", "[Monitoring] Admin Activity Logs"),
     ("BFD not enabled", "[System] BFD Link Detection"),
     ("DNS servers not", "[Net] DNS Configuration"),
+    ("Weak VPN crypto", "[VPN] Encryption Strength"),
+    ("Edge-to-edge encryption disabled", "[VPN] Encryption Strength"),
+    ("encryption protocol", "[VPN] Encryption Strength"),
+    ("No edge certificates", "[VPN] Certificate Validation"),
+    ("certificate expired", "[VPN] Certificate Validation"),
+    ("certificate expiring", "[VPN] Certificate Validation"),
+    ("certificate rotation", "[VPN] Key Rotation"),
+    ("certificate/key material older", "[VPN] Key Rotation"),
+    ("Rotation gap", "[VPN] Key Rotation"),
+    ("current rotation period", "[VPN] Key Rotation"),
+    ("API token inventory", "[Mgmt] Token Enumeration"),
+    ("API token", "[Mgmt] Token Enumeration"),
+    ("authentication mode", "[Mgmt] Enterprise Authentication Mode"),
+    ("native VeloCloud", "[Mgmt] Enterprise Authentication Mode"),
+    ("Enterprise user dormant", "[Mgmt] Dormant User Account Review"),
+    ("never logged in", "[Mgmt] Dormant User Account Review"),
+    ("Inactive enterprise user", "[Mgmt] Dormant User Account Review"),
     ("HA edge state", "[System] High Availability Configuration"),
     ("HA peer last contact", "[System] High Availability Configuration"),
     ("override active", "[System] Edge Override Governance"),
     ("Software update", "[System] Patch Levels"),
     ("NAT rule", "[FW] NAT Exposure"),
-    ("management service", "[FW] Edge Local Access Restrictions"),
     ("Firewall active but logging", "[FW] Firewall Event Logging"),
     ("Firewall logging enabled but syslog", "[Monitoring] Firewall Log Collection"),
     ("Business policy allow-all", "[Net] Default Segment Behaviour"),
@@ -2788,6 +4107,7 @@ def main() -> None:
     edges_dir             = os.path.join(OUTPUT_DIR, "edges")
     firewall_dir          = os.path.join(OUTPUT_DIR, "firewall")
     wan_dir               = os.path.join(OUTPUT_DIR, "wan")
+    certs_dir             = os.path.join(OUTPUT_DIR, "certs")
     combined_dir          = os.path.join(OUTPUT_DIR, "combined")
     combined_records      = []
     enterprise_services = get_enterprise_services_payload()
@@ -2830,15 +4150,26 @@ def main() -> None:
         fw_cfg = {}
         wan_cfg = {}
         cp_cfg = {}
+        ds_cfg = {}
+        qos_cfg = {}
+        edge_certs = []
         if enid:
             modules = get_edge_configuration_modules(enid) or {}
             fw_cfg = _module_data(modules, "firewall")
             wan_cfg = _module_data(modules, "WAN")
             cp_cfg = _module_data(modules, "controlPlane")
+            ds_cfg = _module_data(modules, "deviceSettings")
+            qos_cfg = _module_data(modules, "QOS")
+            edge_certs = get_edge_certificates(enid) or []
             if fw_cfg:
                 save_json(os.path.join(firewall_dir, f"{safe_name(en)}.json"), fw_cfg)
             if wan_cfg:
                 save_json(os.path.join(wan_dir, f"{safe_name(en)}.json"), wan_cfg)
+            if edge_certs:
+                save_json(
+                    os.path.join(certs_dir, f"{safe_name(en)}.json"),
+                    _sanitize_cert_records(edge_certs),
+                )
 
         rec = deepcopy(item)
         rec["profileConfig"]       = pcfg
@@ -2847,6 +4178,9 @@ def main() -> None:
         rec["firewallConfig"]      = fw_cfg
         rec["wanConfig"]           = wan_cfg
         rec["controlPlaneConfig"]  = cp_cfg
+        rec["deviceSettingsModule"] = ds_cfg
+        rec["qosConfig"]           = qos_cfg
+        rec["edgeCertificates"]    = _sanitize_cert_records(edge_certs)
         save_json(os.path.join(combined_dir, f"{safe_name(en)}_combined.json"), rec)
         combined_records.append(rec)
 
@@ -2857,6 +4191,7 @@ def main() -> None:
     enterprise_events = []
     enterprise_event_findings = []
     scope_edge_names = {item["edgeName"] for item in joined}
+    overlay_peer_prefixes = build_overlay_peer_prefixes(combined_records)
 
     for rec in combined_records:
         ctx  = {k: rec[k] for k in
@@ -2868,20 +4203,48 @@ def main() -> None:
         fw_cfg = rec.get("firewallConfig") or {}
         wan_cfg = rec.get("wanConfig") or {}
         cp_cfg = rec.get("controlPlaneConfig") or {}
+        ds_mod = rec.get("deviceSettingsModule") or {}
+        edge_certs = rec.get("edgeCertificates") or []
         effective = _effective_config(pcfg, ecfg)
 
         analyse_firewall_rules(
             ctx, pcfg, ecfg, all_findings,
             firewall_cfg=fw_cfg,
             profile_fw=rec.get("profileFirewall") or {},
+            edge_ds=rec.get("deviceSettingsModule") or {},
+            profile_modules=profile_modules_cache.get(ctx.get("profileNumericId")) or {},
+        )
+        analyse_segment_enforcement(
+            ctx, pcfg, ecfg, all_findings,
+            firewall_cfg=fw_cfg,
+            profile_fw=rec.get("profileFirewall") or {},
+            edge_ds=rec.get("deviceSettingsModule") or {},
+            profile_ds=_module_data(
+                profile_modules_cache.get(ctx.get("profileNumericId")) or {},
+                "deviceSettings",
+            ),
+            edge_qos=rec.get("qosConfig") or {},
+            profile_modules=profile_modules_cache.get(ctx.get("profileNumericId")) or {},
+            profile_fw_module=rec.get("profileFirewall") or {},
         )
         analyse_edge_access(ctx, fw_cfg, all_findings)
+        analyse_overlay_management_access(
+            ctx, fw_cfg, pcfg, ecfg,
+            overlay_peer_prefixes.get(ctx["edgeName"], []),
+            all_findings,
+        )
         analyse_firewall_logging(ctx, fw_cfg, effective, all_findings)
         analyse_override_governance(ctx, all_findings)
         analyse_software_update(ctx, pcfg, ecfg, all_findings)
         analyse_nat_exposure(ctx, pcfg, ecfg, all_findings)
         analyse_business_policy(ctx, wan_cfg, pcfg, ecfg, all_findings)
         analyse_segmentation(ctx, pcfg, ecfg, all_findings)
+        analyse_edge_to_edge_communication(
+            ctx, pcfg, ecfg, all_findings,
+            profile_modules=profile_modules_cache.get(ctx.get("profileNumericId")) or {},
+            profile_fw=rec.get("profileFirewall") or {},
+            edge_fw=fw_cfg,
+        )
         analyse_segment_isolation(
             ctx, pcfg, ecfg, all_findings,
             profile_modules=profile_modules_cache.get(ctx.get("profileNumericId")) or {},
@@ -2895,9 +4258,32 @@ def main() -> None:
         analyse_ha_config(ctx, all_findings)
         analyse_security_features(ctx, fw_cfg, all_findings)
         analyse_edge_inventory(ctx, all_findings)
-        if args.deep:
-            analyse_vpn_crypto(ctx, cp_cfg, all_findings)
+        analyse_vpn_encryption_strength(ctx, cp_cfg, ds_mod, all_findings)
+        analyse_vpn_certificate_validation(ctx, edge_certs, all_findings)
+        analyse_vpn_key_rotation(ctx, edge_certs, all_findings)
         all_hardening.extend(evaluate_hardening(ctx, pcfg, ecfg))
+
+    print("       Running enterprise management collectors (users, tokens, auth)...")
+    mgmt_dir = os.path.join(OUTPUT_DIR, "mgmt")
+    enterprise_record = get_enterprise_record()
+    enterprise_users = get_enterprise_users()
+    api_tokens = get_enterprise_api_tokens()
+    if enterprise_record:
+        save_json(os.path.join(mgmt_dir, "enterprise.json"), enterprise_record)
+    if enterprise_users:
+        save_json(
+            os.path.join(mgmt_dir, "enterprise_users.json"),
+            [_sanitize_enterprise_user(u) for u in enterprise_users],
+        )
+    if api_tokens:
+        save_json(
+            os.path.join(mgmt_dir, "api_tokens.json"),
+            [_sanitize_api_token_record(t) for t in api_tokens],
+        )
+    mgmt_ctx = _enterprise_ctx()
+    analyse_token_enumeration(mgmt_ctx, api_tokens, all_findings)
+    analyse_enterprise_auth_mode(mgmt_ctx, enterprise_record, enterprise_users, all_findings)
+    analyse_dormant_users(mgmt_ctx, enterprise_users, all_findings)
 
     if args.deep:
         print("       Running Phase 4 deep collectors (route table, gateways)...")

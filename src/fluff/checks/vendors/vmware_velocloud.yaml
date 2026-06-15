@@ -4,14 +4,17 @@
 #               (produced by tools/velo_collector.py)
 #
 # Check counts: 13 regex-automated (required_regex/forbidden_regex on combined JSON)
-#               10 collector-backed (required_regex on vco_check.* lines from
+#               15 collector-backed (required_regex on vco_check.* lines from
 #                  findings/methodology_coverage.json — velo_collector.py must be
 #                  run first; checks FAIL conservatively when coverage is absent)
-#               16 manual (UI-only or live-state required)
-#               Total: 39
+#               13 manual (UI-only or live-state required)
+#               Total: 41
 #
 # The 13 XLSX "Partial" checks that required deep event/API data not available
 # in the static combined JSON have been removed (not applicable to nd-toad).
+# velo_collector.py ≥ velo_final promoted [Net] Edge-to-Edge Communication,
+# [VPN] Encryption Strength, [VPN] Certificate Validation, [VPN] Key Rotation,
+# and [Mgmt] Dormant User Account Review from manual/partial to automated.
 
 vendor: vmware
 profile: vmware_velocloud
@@ -374,9 +377,26 @@ checks:
       reason: >
         Verifying overlay-to-management access restrictions requires reviewing
         the network topology and firewall rules together with routing tables.
+        velo_collector.py's analyse_overlay_management_access provides assisted
+        evidence but requires human confirmation.
     remediation: >
       Ensure the Orchestrator management plane is not reachable via overlay
       data-plane addresses. Use out-of-band management or strict firewall rules.
+
+  - id: VCO-NET-006
+    generic_id: NET-006
+    title: "Edge-to-edge communication must be scoped to authorised segments only"
+    severity: medium
+    cis:
+      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "NET-EdgeToEdge", level: 1}
+    probe:
+      type: required_regex
+      # velo_collector.py's analyse_edge_to_edge_communication checks VPN
+      # branch-to-branch peering across all segments per edge.
+      pattern: 'vco_check\.NET_EdgeToEdge\.affected = False'
+    remediation: >
+      Configure > Profiles > Device (segment) > Cloud VPN: restrict edge-to-edge
+      peering to authorised segments only.
 
   - id: VCO-NET-008
     generic_id: NET-008
@@ -393,6 +413,21 @@ checks:
 
   # ── [VPN] ─────────────────────────────────────────────────────────────────
 
+  - id: VCO-VPN-001
+    generic_id: VPN-001
+    title: "VPN encryption must use strong algorithms (AES-256-GCM or equivalent)"
+    severity: high
+    cis:
+      - {benchmark: "VMware SD-WAN Security Review Methodology", control: "VPN-CryptoStrength", level: 1}
+    probe:
+      type: required_regex
+      # velo_collector.py's analyse_vpn_encryption_strength inspects
+      # controlPlane and deviceSettings encryption profiles.
+      pattern: 'vco_check\.VPN_EncryptionStrength\.affected = False'
+    remediation: >
+      Configure > Profiles > Device > Cloud VPN > Advanced Settings: select
+      AES-256-GCM or AES-256 with SHA-256 as the IPsec encryption profile.
+
   - id: VCO-VPN-002
     generic_id: VPN-002
     title: "VPN certificate validation must be configured"
@@ -400,28 +435,29 @@ checks:
     cis:
       - {benchmark: "VMware SD-WAN Security Review Methodology", control: "VPN-CertValidation", level: 1}
     probe:
-      type: manual
-      reason: >
-        Certificate validation for VPN sessions is verified through the
-        Orchestrator PKI configuration and edge certificate policy.
+      type: required_regex
+      # velo_collector.py's analyse_vpn_certificate_validation checks edge
+      # certificates retrieved via the Portal API (/configuration/getConfigurationModules).
+      pattern: 'vco_check\.VPN_CertValidation\.affected = False'
     remediation: >
       Ensure PKI certificates are provisioned on all edges and Orchestrator
       validates edge certificates during tunnel establishment.
 
   - id: VCO-VPN-003
     generic_id: VPN-003
-    title: "VPN key rotation schedule must be defined"
+    title: "VPN key/certificate rotation must be within policy"
     severity: low
     cis:
       - {benchmark: "VMware SD-WAN Security Review Methodology", control: "VPN-KeyRotation", level: 1}
     probe:
-      type: manual
-      reason: >
-        Key rotation schedule verification requires reviewing Orchestrator
-        system properties and any external PKI policy documentation.
+      type: required_regex
+      # velo_collector.py's analyse_vpn_key_rotation checks certificate age,
+      # rotation gaps, and HA-coordinated rebuilds.
+      pattern: 'vco_check\.VPN_KeyRotation\.affected = False'
     remediation: >
-      Define and document a key rotation schedule consistent with the
-      organisation's cryptographic policy.
+      Review edge certificate timestamps and ensure rotation occurs within the
+      organisational policy window. Trigger a PKI rebuild if certificates are
+      stale.
 
   # ── [Management] ──────────────────────────────────────────────────────────
 
@@ -538,10 +574,11 @@ checks:
     cis:
       - {benchmark: "VMware SD-WAN Security Review Methodology", control: "MGMT-DormantAccounts", level: 1}
     probe:
-      type: manual
-      reason: >
-        Dormant account detection requires querying user last-login timestamps
-        in the Orchestrator UI or API.
+      type: required_regex
+      # velo_collector.py's analyse_dormant_users queries the enterprise user
+      # list via Portal API and flags accounts inactive beyond VCO_DORMANT_USER_DAYS.
+      # This is an enterprise-level check; a finding flags all edge audits.
+      pattern: 'vco_check\.MGMT_DormantUsers\.affected = False'
     remediation: >
       Administration > User Management > Users: identify accounts with no recent
       login and disable or remove them.
