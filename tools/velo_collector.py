@@ -13,12 +13,15 @@ Detection modules:
   4. Segmentation analysis        — profile vs edge drift + segment isolation (VPN)
   5. Structural diff              — LAN/WAN drift when deviceSettings override enabled
   6. Device hardening             — NTP, syslog, SNMP, BFD, DNS, HA, overlay encryption
+  6b. System certificate auth    — edge authentication mode + PKI certificate health
+  6c. HA pair parity             — CPE0/CPE1 config symmetry (NTP, syslog, SNMP, AAA, BFD)
   7. Edge inventory               — offline/stale edges, activation, version review
   8. Enterprise events (optional) — --events: filtered MGD_CONF_* and auth events
   9. Methodology coverage         — XLSX-linked findings, manual checklist, Dradis CSV
  10. Deep collectors (--deep)     — route table, gateway assignments
  11. VPN review                    — encryption strength, certificate validation, key rotation
  12. Enterprise management         — API token inventory, auth mode, dormant users
+ 13. Isolation review              — shared resources, profile inheritance dedupe, wireless security
 
 Output layout:
   vco_output/<timestamp>/
@@ -59,6 +62,9 @@ Optional:
   VCO_STALE_EDGE_DAYS    days without contact before stale finding (default: 30)
   VCO_MIN_EDGE_VERSION   minimum acceptable edge software version, e.g. 6.0.0
   VCO_EVENTS_HOURS       event lookback when using --events (default: 168)
+  VCO_EVENTS             false/0 to disable --events (enabled by default)
+  VCO_PHASE4             false/0 to disable --deep (enabled by default)
+  VCO_MINIMAL            1/true to disable both --events and --deep
   VCO_METHODOLOGY_XLSX   path to methodology workbook (default: velocloud_config_review_FINAL.xlsx)
   VCO_DORMANT_USER_DAYS  days since last login before dormant user finding (default: 90)
 
@@ -68,10 +74,13 @@ Usage:
   export VCO_ENTERPRISE_LOGICAL_ID='xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
   export VCO_ENTERPRISE_NUMERIC_ID='1234'
   export VCO_SCOPE_EDGES='EDGE-01,EDGE-02'   # optional
-  python3 velo_final.py
-  python3 velo_final.py --events
-  python3 velo_final.py --events --events-hours 72
-  python3 velo_final.py --events --deep
+  python3 velo_final.py                      # full review: config + events + deep
+  python3 velo_final.py --no-events          # skip enterprise event fetch
+  python3 velo_final.py --no-deep            # skip route table + gateway collectors
+  python3 velo_final.py --scope-edges EDGE-01,EDGE-02
+  python3 velo_final.py --xlsx velocloud_config_review_FINAL.xlsx
+  python3 velo_final.py --output-dir vco_output/manual_run
+  python3 velo_final.py --events-hours 72
 """
 
 import argparse
@@ -104,12 +113,26 @@ RATE_LIMIT_BASE_DELAY      = 2.0
 STALE_EDGE_DAYS            = int(os.getenv("VCO_STALE_EDGE_DAYS", "30"))
 MIN_EDGE_VERSION           = os.getenv("VCO_MIN_EDGE_VERSION", "").strip()
 EVENTS_HOURS_DEFAULT       = int(os.getenv("VCO_EVENTS_HOURS", "168"))
+def _feature_enabled(env_name: str, default: bool = True) -> bool:
+    """Parse env var as feature toggle; empty means *default*."""
+    raw = os.getenv(env_name, "").strip().lower()
+    if not raw:
+        return default
+    if raw in {"0", "false", "no", "off"}:
+        return False
+    if raw in {"1", "true", "yes", "on"}:
+        return True
+    return default
+
+
+_MINIMAL_RUN = os.getenv("VCO_MINIMAL", "").strip().lower() in {"1", "true", "yes", "on"}
+EVENTS_DEFAULT = _feature_enabled("VCO_EVENTS", default=not _MINIMAL_RUN)
+PHASE4_DEFAULT = _feature_enabled("VCO_PHASE4", default=not _MINIMAL_RUN)
+DORMANT_USER_DAYS          = int(os.getenv("VCO_DORMANT_USER_DAYS", "90"))
 METHODOLOGY_XLSX           = os.getenv(
     "VCO_METHODOLOGY_XLSX",
     "velocloud_config_review_FINAL.xlsx",
 )
-PHASE4_DEFAULT             = os.getenv("VCO_PHASE4", "").strip().lower() in {"1", "true", "yes", "on"}
-DORMANT_USER_DAYS          = int(os.getenv("VCO_DORMANT_USER_DAYS", "90"))
 
 _SENSITIVE_NAT_PORTS       = {22, 23, 3389, 445, 1433, 3306, 5432, 5900, 8080, 8443}
 _EDGE_ACCESS_SERVICES      = ("ssh", "snmp", "localUi", "console", "icmp", "post")
@@ -123,7 +146,6 @@ _SECURITY_EVENT_NAMES = {
 _IGNORED_EVENT_NAMES = {
     "BROWSER_ENTERPRISE_LOGIN",
     "USER_LOGIN",
-    "MGD_CONF_APPLIED",
 }
 
 _AGGREGATE_FAILURE_EVENTS = {
@@ -131,6 +153,32 @@ _AGGREGATE_FAILURE_EVENTS = {
     "USER_LOGIN_FAILED",
     "LOGIN_FAILED",
     "AUTHENTICATION_FAILED",
+}
+
+_ADMIN_ACTIVITY_EVENTS = {
+    "CREATE_API_TOKEN", "DOWNLOAD_API_TOKEN", "REVOKE_API_TOKEN",
+    "GRANT_SSH_ACCESS", "REVOKE_SSH_ACCESS", "ROLE_RESET",
+    "REMOTE_ACTION", "EDIT_PROFILE",
+    "EDGE_LOCALUI_LOGIN", "EDGE_SSH_LOGIN", "EDGE_MGMT_LOGIN",
+}
+
+_CONFIG_CHANGE_EVENTS = {
+    "MGD_CONF_APPLIED", "MGD_CONF_FAILED", "MGD_CONF_ROLLBACK", "MGD_CONF_PENDING",
+    "EDIT_PROFILE", "FIREWALL_ENABLE", "FIREWALL_DISABLE",
+}
+
+_EVENT_REVIEW_ALERT_EVENTS = {
+    "REMOTE_ACTION", "GRANT_SSH_ACCESS", "REVOKE_SSH_ACCESS",
+    "CREATE_API_TOKEN", "DOWNLOAD_API_TOKEN", "REVOKE_API_TOKEN",
+    "MGD_CONF_FAILED", "MGD_CONF_ROLLBACK", "MGD_CONF_PENDING",
+    "USER_LOGIN_FAILURE", "USER_LOGIN_FAILED", "LOGIN_FAILED",
+    "FIREWALL_ENABLE", "FIREWALL_DISABLE",
+}
+
+_AGGREGATE_EVENT_NAMES = {
+    "USER_LOGIN_FAILURE", "USER_LOGIN_FAILED", "LOGIN_FAILED", "AUTHENTICATION_FAILED",
+    "MGD_CONF_APPLIED", "FIREWALL_ENABLE", "EDIT_PROFILE", "REMOTE_ACTION",
+    "CREATE_API_TOKEN", "DOWNLOAD_API_TOKEN", "ROLE_RESET",
 }
 
 _SEGMENT_MERGE_KEYS = ("syslog", "ntp", "bfd")
@@ -152,7 +200,16 @@ def _require_env() -> None:
 
 API2_BASE   = f"https://{VCO_HOSTNAME}/api/sdwan/v2"
 PORTAL_URL  = f"https://{VCO_HOSTNAME}/portal/"
-OUTPUT_DIR  = os.path.join("vco_output", datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S"))
+OUTPUT_DIR  = ""  # resolved in main() from --output-dir or vco_output/<timestamp>
+
+
+def _resolve_output_dir(cli_path: str = None) -> str:
+    if cli_path:
+        return cli_path
+    return os.path.join(
+        "vco_output",
+        datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S"),
+    )
 
 if not VERIFY_TLS:
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -1566,6 +1623,8 @@ def analyse_firewall_logging(
             "Enable firewall event logging on active segments.",
             methodology_ref="[FW] Firewall Event Logging",
         ))
+        # Do not also flag [Monitoring] Firewall Log Collection here — same root
+        # cause; collection findings fire only when logging is enabled below.
 
     if (global_log or segment_logging) and not syslog_ok:
         findings.append(_finding(
@@ -1949,6 +2008,7 @@ def analyse_segmentation(ctx: dict, profile_cfg: dict, edge_cfg: dict, findings:
             "segments",
             f"Profile segment '{missing}' not present in edge deviceSettings",
             "Verify the edge inherits this segment from the profile or confirm intentional removal.",
+            methodology_ref="[Isolation] Profile Inheritance",
         ))
 
     # Segments present on edge but not in profile baseline
@@ -1960,6 +2020,7 @@ def analyse_segmentation(ctx: dict, profile_cfg: dict, edge_cfg: dict, findings:
             f"Edge-only segment '{added}' has no counterpart in the profile",
             "Confirm this segment was intentionally added as an edge-specific override "
             "and that its security controls have been reviewed.",
+            methodology_ref="[Isolation] Profile Inheritance",
         ))
 
     # Per-segment: compare VPN and inter-segment routing flags
@@ -1981,6 +2042,7 @@ def analyse_segmentation(ctx: dict, profile_cfg: dict, edge_cfg: dict, findings:
                 f"segments[{seg_label}].vpn.edgeToDataCenter",
                 f"profile={p_e2dc}, edge={e_e2dc}",
                 "Confirm the edge-level override on this VPN setting is approved and documented.",
+                methodology_ref="[Isolation] Profile Inheritance",
             ))
 
         # NAT override check
@@ -1994,6 +2056,7 @@ def analyse_segmentation(ctx: dict, profile_cfg: dict, edge_cfg: dict, findings:
                     f"segments[{seg_label}].nat.rules",
                     f"profile rules={len(p_nat)}, edge rules={len(e_nat)}",
                     "Review the additional edge-specific NAT rules to confirm they are intended.",
+                    methodology_ref="[Isolation] Profile Inheritance",
                 ))
 
 
@@ -2130,6 +2193,306 @@ def _firewall_module_active(firewall_cfg: dict) -> bool:
     )
 
 
+_PSK_AUTH_MODES = {
+    "CERTIFICATE_DEACTIVATED",
+    "DEACTIVATED", "PSK", "PRE_SHARED_KEY", "PRE_SHARED",
+}
+_CERT_AUTH_MODES = {
+    "CERTIFICATE_ACQUIRE",
+    "CERTIFICATE_REQUIRED",
+}
+_HA_CPE_SUFFIX_RE = re.compile(r"^(?P<base>.+)-(CPE0|CPE1)$", re.IGNORECASE)
+
+
+def _normalize_auth_mode(mode) -> str:
+    return re.sub(r"[\s_\-]+", "_", str(mode or "").strip().upper())
+
+
+def _edge_portal_auth_mode(portal: dict) -> str:
+    return _normalize_auth_mode((portal or {}).get("authenticationMode"))
+
+
+def _is_psk_auth_mode(auth_mode: str) -> bool:
+    if not auth_mode:
+        return False
+    if auth_mode in _PSK_AUTH_MODES:
+        return True
+    return "DEACTIVATED" in auth_mode or auth_mode.endswith("_PSK")
+
+
+def _is_cert_auth_mode(auth_mode: str) -> bool:
+    if not auth_mode:
+        return False
+    if auth_mode in _CERT_AUTH_MODES:
+        return True
+    return "ACQUIRE" in auth_mode or "REQUIRED" in auth_mode
+
+
+def _aaa_service_configured(service) -> bool:
+    if isinstance(service, list):
+        return any(_aaa_service_configured(item) for item in service)
+    if not isinstance(service, dict) or not service:
+        return False
+    if service.get("enabled") is False:
+        return False
+    for key in ("server", "servers", "host", "ipAddress", "primary", "secondary"):
+        val = service.get(key)
+        if isinstance(val, dict) and val:
+            return True
+        if isinstance(val, list) and val:
+            return True
+        if isinstance(val, str) and val.strip():
+            return True
+    return False
+
+
+def _admin_aaa_configured(effective: dict) -> tuple:
+    """Return (configured, mechanism) for edge administrative AAA."""
+    tacacs = effective.get("tacacs") or {}
+    if _aaa_service_configured(tacacs):
+        return True, "TACACS"
+
+    radius = effective.get("radius") or {}
+    if _aaa_service_configured(radius):
+        return True, "RADIUS"
+
+    auth = effective.get("authentication") or {}
+    if isinstance(auth, dict):
+        if auth.get("radiusEnabled") or auth.get("useRadius"):
+            if _aaa_service_configured(auth.get("radius") or auth):
+                return True, "RADIUS"
+        if auth.get("tacacsEnabled") or auth.get("useTacacs"):
+            if _aaa_service_configured(auth.get("tacacs") or auth):
+                return True, "TACACS"
+
+    for svc in effective.get("authServices") or []:
+        if not isinstance(svc, dict) or svc.get("enabled") is False:
+            continue
+        svc_type = _normalize_auth_mode(svc.get("type") or svc.get("protocol"))
+        if svc_type in {"TACACS", "RADIUS"} and _aaa_service_configured(svc):
+            return True, svc_type
+
+    return False, ""
+
+
+def _analyse_edge_admin_aaa(ctx: dict, effective: dict, findings: list) -> None:
+    configured, mechanism = _admin_aaa_configured(effective)
+    if configured:
+        return
+    findings.append(_finding(
+        ctx, "device_hardening", "low",
+        "Centralised admin authentication not configured (no TACACS or RADIUS detected)",
+        "deviceSettings.tacacs|radius|authServices",
+        "absent",
+        "Configure TACACS or RADIUS for edge administrative access.",
+        methodology_ref="[System] Edge Admin AAA (TACACS/RADIUS)",
+    ))
+
+
+def _ha_control_fingerprint(label: str, effective: dict) -> str:
+    if label == "ntp":
+        ntp = effective.get("ntp") or {}
+        servers = sorted(str(s) for s in (ntp.get("servers") or []))
+        return json.dumps(
+            {"enabled": ntp.get("enabled"), "servers": servers},
+            sort_keys=True,
+        )
+    if label == "syslog":
+        collectors = []
+        for seg in effective.get("segments") or []:
+            if not isinstance(seg, dict):
+                continue
+            syslog = seg.get("syslog") or {}
+            if not syslog.get("enabled"):
+                continue
+            for collector in syslog.get("collectors") or []:
+                if not isinstance(collector, dict):
+                    continue
+                collectors.append({
+                    "host": collector.get("host") or collector.get("ip"),
+                    "port": collector.get("port"),
+                    "protocol": collector.get("protocol") or collector.get("proto"),
+                })
+        collectors.sort(key=lambda item: json.dumps(item, sort_keys=True))
+        return json.dumps(collectors, sort_keys=True)
+    if label == "snmp":
+        snmp = effective.get("snmp") or {}
+        v2c = snmp.get("snmpv2c") or {}
+        v3 = snmp.get("snmpv3") or {}
+        return json.dumps({
+            "enabled": snmp.get("enabled"),
+            "snmpv2cEnabled": v2c.get("enabled"),
+            "snmpv3Enabled": v3.get("enabled") if isinstance(v3, dict) else None,
+        }, sort_keys=True)
+    if label == "admin_aaa":
+        configured, mechanism = _admin_aaa_configured(effective)
+        return json.dumps({"configured": configured, "mechanism": mechanism}, sort_keys=True)
+    if label == "bfd":
+        bfd = effective.get("bfd") or {}
+        return json.dumps({"enabled": bfd.get("enabled")}, sort_keys=True)
+    return ""
+
+
+_HA_PARITY_CONTROLS = (
+    ("NTP", "ntp"),
+    ("syslog forwarding", "syslog"),
+    ("SNMP", "snmp"),
+    ("admin AAA", "admin_aaa"),
+    ("BFD", "bfd"),
+)
+
+
+def _record_ctx(rec: dict) -> dict:
+    return {k: rec[k] for k in
+            ["edgeName", "edgeLogicalId", "profileName",
+             "profileNumericId", "profileLogicalId",
+             "edgeOverrides", "edgePortalRecord"]}
+
+
+def build_ha_cpe_pairs(combined_records: list) -> list:
+    """Match explicit CPE0/CPE1 hub pairs for parity comparison."""
+    buckets = {}
+    for rec in combined_records:
+        name = rec.get("edgeName") or ""
+        match = _HA_CPE_SUFFIX_RE.match(name)
+        if not match:
+            continue
+        base = match.group("base").upper()
+        role = "CPE0" if name.upper().endswith("-CPE0") else "CPE1"
+        buckets.setdefault(base, {})[role] = rec
+    pairs = []
+    for members in buckets.values():
+        if "CPE0" in members and "CPE1" in members:
+            pairs.append((members["CPE0"], members["CPE1"]))
+    return pairs
+
+
+def analyse_ha_pair_parity(combined_records: list, findings: list) -> None:
+    """[System] High Availability Configuration — compare HA peer effective configs."""
+    for rec_a, rec_b in build_ha_cpe_pairs(combined_records):
+        name_a = rec_a.get("edgeName", "?")
+        name_b = rec_b.get("edgeName", "?")
+        eff_a = _effective_config(rec_a.get("profileConfig") or {}, rec_a.get("edgeConfig") or {})
+        eff_b = _effective_config(rec_b.get("profileConfig") or {}, rec_b.get("edgeConfig") or {})
+        ctx = _record_ctx(rec_a)
+        for label, key in _HA_PARITY_CONTROLS:
+            fp_a = _ha_control_fingerprint(key, eff_a)
+            fp_b = _ha_control_fingerprint(key, eff_b)
+            if fp_a == fp_b:
+                continue
+            findings.append(_finding(
+                ctx, "ha_config", "medium",
+                f"HA pair config mismatch on {label}: {name_a} vs {name_b}",
+                "ha.pairParity",
+                json.dumps({
+                    "peerA": name_a,
+                    "peerB": name_b,
+                    "control": label,
+                    "peerAConfig": json.loads(fp_a) if fp_a else None,
+                    "peerBConfig": json.loads(fp_b) if fp_b else None,
+                }, ensure_ascii=False),
+                "Align HA peer configuration for symmetric failover behaviour.",
+                methodology_ref="[System] High Availability Configuration",
+            ))
+
+
+def analyse_edge_certificate_auth(
+    ctx: dict,
+    edge_certs: list,
+    enterprise: dict,
+    findings: list,
+) -> None:
+    """[System] Edge Certificate Authentication — portal auth mode + cert health."""
+    portal = ctx.get("edgePortalRecord") or {}
+    auth_mode = _edge_portal_auth_mode(portal)
+    pki_mode = _normalize_auth_mode((enterprise or {}).get("endpointPkiMode"))
+    serials = set()
+    for key in ("serialNumber", "haSerialNumber"):
+        val = portal.get(key)
+        if val:
+            serials.add(str(val))
+
+    policy_evidence = {
+        "authenticationMode": portal.get("authenticationMode"),
+        "endpointPkiMode": (enterprise or {}).get("endpointPkiMode"),
+    }
+
+    if _is_psk_auth_mode(auth_mode):
+        findings.append(_finding(
+            ctx, "edge_certificate_auth", "medium",
+            "Edge uses pre-shared key authentication (Certificate Deactivated)",
+            "edgePortalRecord.authenticationMode",
+            json.dumps(policy_evidence, ensure_ascii=False),
+            "Migrate to Certificate Acquire or Certificate Required per hardening guidance.",
+            methodology_ref="[System] Edge Certificate Authentication",
+            automation="partial",
+        ))
+    elif not _is_cert_auth_mode(auth_mode):
+        if pki_mode in {"", "CERTIFICATE_DISABLED", "CERTIFICATE_OPTIONAL"}:
+            findings.append(_finding(
+                ctx, "edge_certificate_auth", "low",
+                "Edge certificate authentication mode not set to Certificate Acquire/Required",
+                "edgePortalRecord.authenticationMode|enterprise.endpointPkiMode",
+                json.dumps(policy_evidence, ensure_ascii=False),
+                "Use Certificate Acquire or Certificate Required instead of pre-shared key only.",
+                methodology_ref="[System] Edge Certificate Authentication",
+                automation="partial",
+            ))
+
+    if not _is_cert_auth_mode(auth_mode) and not _is_psk_auth_mode(auth_mode):
+        return
+
+    certs_by_serial = _certs_by_serial(edge_certs or [])
+    now = datetime.now(timezone.utc)
+    targets = serials or {"unknown"}
+    for serial in sorted(targets):
+        latest = _latest_cert(certs_by_serial.get(serial, []))
+        if not latest:
+            sev = "high" if auth_mode.endswith("REQUIRED") or "REQUIRED" in auth_mode else "medium"
+            findings.append(_finding(
+                ctx, "edge_certificate_auth", sev,
+                f"No edge certificate found for serial {serial}",
+                "edge/getEdgeCertificates",
+                json.dumps({"edgeSerialNumber": serial, **policy_evidence}, ensure_ascii=False),
+                "Ensure the edge has a valid VCO-issued certificate for authentication.",
+                methodology_ref="[System] Edge Certificate Authentication",
+                automation="partial",
+            ))
+            continue
+        valid_to = _parse_vco_timestamp(latest.get("validTo"))
+        if not valid_to:
+            continue
+        days_left = (valid_to - now).days
+        if days_left < 0:
+            findings.append(_finding(
+                ctx, "edge_certificate_auth", "high",
+                f"Edge certificate expired for serial {serial}",
+                "edge/getEdgeCertificates",
+                json.dumps({
+                    "edgeSerialNumber": serial,
+                    "validTo": latest.get("validTo"),
+                    "daysExpired": abs(days_left),
+                }, ensure_ascii=False),
+                "Renew edge certificates before authentication or overlay tunnels fail.",
+                methodology_ref="[System] Edge Certificate Authentication",
+                automation="partial",
+            ))
+        elif days_left <= _CERT_EXPIRY_WARN_DAYS:
+            findings.append(_finding(
+                ctx, "edge_certificate_auth", "medium",
+                f"Edge certificate expiring within {_CERT_EXPIRY_WARN_DAYS} days for serial {serial}",
+                "edge/getEdgeCertificates",
+                json.dumps({
+                    "edgeSerialNumber": serial,
+                    "validTo": latest.get("validTo"),
+                    "daysRemaining": days_left,
+                }, ensure_ascii=False),
+                "Confirm automatic certificate renewal is active.",
+                methodology_ref="[System] Edge Certificate Authentication",
+                automation="partial",
+            ))
+
+
 def analyse_device_hardening(
     ctx: dict,
     profile_cfg: dict,
@@ -2193,16 +2556,7 @@ def analyse_device_hardening(
                 "Enable the firewall control block unless a documented exception exists.",
             ))
 
-    tacacs = effective.get("tacacs") or {}
-    if not tacacs or tacacs in ({}, []):
-        findings.append(_finding(
-            ctx, "device_hardening", "low",
-            "Centralised admin authentication (TACACS) not configured",
-            "tacacs",
-            "absent",
-            "Consider TACACS/RADIUS for edge administrative access.",
-            methodology_ref="[System] Edge Admin AAA (TACACS/RADIUS)",
-        ))
+    _analyse_edge_admin_aaa(ctx, effective, findings)
 
     for iface in effective.get("routedInterfaces") or []:
         if not isinstance(iface, dict) or iface.get("disabled"):
@@ -2278,6 +2632,15 @@ def analyse_ha_config(ctx: dict, findings: list) -> None:
         return
     ha_data = ha.get("data") or {}
     ha_state = str(ha_data.get("haState", "")).upper()
+    if ha_type in {"ACTIVE_STANDBY", "ACTIVE_ACTIVE"} and not portal.get("haSerialNumber"):
+        findings.append(_finding(
+            ctx, "edge_inventory", "low",
+            "Enhanced HA edge missing standby serial metadata",
+            "edgePortalRecord.haSerialNumber",
+            json.dumps({"haType": ha_type, "serialNumber": portal.get("serialNumber")}, ensure_ascii=False),
+            "Verify HA standby unit is paired and reporting.",
+            methodology_ref="[System] High Availability Configuration",
+        ))
     if ha_state and ha_state not in {"READY", "ACTIVE", "STANDBY"}:
         findings.append(_finding(
             ctx, "edge_inventory", "medium",
@@ -2426,15 +2789,69 @@ def _is_aggregate_failure_event(name: str) -> bool:
     )
 
 
-def analyse_enterprise_events(events: list) -> list:
+def _event_methodology_refs(name: str) -> list:
+    """Map an event name to one or more monitoring methodology checks."""
+    upper = name.upper()
+    if upper in _IGNORED_EVENT_NAMES:
+        return []
+    refs = []
+    if (
+        _is_aggregate_failure_event(name)
+        or upper in _ADMIN_ACTIVITY_EVENTS
+        or ("LOGIN" in upper and "FAIL" in upper)
+        or upper in {"EDGE_LOCALUI_LOGIN", "EDGE_SSH_LOGIN", "EDGE_MGMT_LOGIN"}
+    ):
+        refs.append("[Monitoring] Admin Activity Logs")
+    if upper.startswith("MGD_CONF_") or upper in _CONFIG_CHANGE_EVENTS:
+        refs.append("[Monitoring] Config Change Logs")
+    if upper not in _IGNORED_EVENT_NAMES:
+        refs.append("[Monitoring] Event Review")
+    return list(dict.fromkeys(refs))
+
+
+def _event_severity(name: str, aggregate: bool = False) -> str:
+    upper = name.upper()
+    if "FAILED" in upper or "ROLLBACK" in upper or "PENDING" in upper:
+        return "high"
+    if upper in _EVENT_REVIEW_ALERT_EVENTS or upper in _ADMIN_ACTIVITY_EVENTS:
+        return "medium" if not aggregate else "info"
+    if upper == "MGD_CONF_APPLIED":
+        return "info"
+    return "info" if aggregate else "medium"
+
+
+def _append_event_finding(
+    findings: list,
+    ctx: dict,
+    name: str,
+    methodology_ref: str,
+    severity: str,
+    title: str,
+    evidence: dict,
+    note: str,
+) -> None:
+    findings.append(_finding(
+        ctx, "enterprise_events", severity,
+        title,
+        "event/getEnterpriseEvents",
+        json.dumps(evidence, ensure_ascii=False),
+        note,
+        methodology_ref=methodology_ref,
+        automation="partial",
+    ))
+
+
+def analyse_enterprise_events(events: list, hours: int = EVENTS_HOURS_DEFAULT) -> list:
     """
-    Build enterprise event findings separately from edge findings.
-    Drops routine logins; aggregates repeated login failures.
+    Build enterprise event findings for Monitoring checks.
+    Emits Event Review summary, admin-activity aggregates, and config-change events.
     """
     ctx = _enterprise_ctx()
     findings = []
-    seen = set()
-    failure_buckets = {}
+    all_counts = {}
+    review_counts = {}
+    aggregate_buckets = {}
+    seen_individual = set()
 
     for ev in events:
         if not isinstance(ev, dict):
@@ -2443,85 +2860,120 @@ def analyse_enterprise_events(events: list) -> list:
         if not name:
             continue
         upper = name.upper()
+        all_counts[upper] = all_counts.get(upper, 0) + 1
         if upper in _IGNORED_EVENT_NAMES:
             continue
-
-        is_security = (
-            upper in _SECURITY_EVENT_NAMES
-            or upper.startswith("MGD_CONF_")
-            or "LOGIN" in upper
-            or "AUTH" in upper
-        )
-        if not is_security:
-            continue
+        review_counts[upper] = review_counts.get(upper, 0) + 1
 
         edge = ev.get("edgeName") or ev.get("edge") or "(enterprise)"
         event_time = ev.get("eventTime") or ev.get("time")
-
-        if _is_aggregate_failure_event(name):
-            bucket_key = (name, edge)
-            bucket = failure_buckets.setdefault(bucket_key, {
-                "count": 0,
-                "users": set(),
-                "first_time": event_time,
-                "last_time": event_time,
-                "sample_message": (ev.get("message") or "")[:200],
-            })
-            bucket["count"] += 1
-            user = ev.get("user")
-            if user:
-                bucket["users"].add(str(user))
-            if event_time and (not bucket["first_time"] or event_time < bucket["first_time"]):
-                bucket["first_time"] = event_time
-            if event_time and (not bucket["last_time"] or event_time > bucket["last_time"]):
-                bucket["last_time"] = event_time
+        refs = _event_methodology_refs(name)
+        if not refs:
             continue
 
-        key = (name, edge, event_time)
-        if key in seen:
+        if upper in _AGGREGATE_EVENT_NAMES or _is_aggregate_failure_event(name):
+            for ref in refs:
+                bucket_key = (upper, edge, ref)
+                bucket = aggregate_buckets.setdefault(bucket_key, {
+                    "count": 0,
+                    "users": set(),
+                    "first_time": event_time,
+                    "last_time": event_time,
+                    "sample_message": (ev.get("message") or "")[:200],
+                })
+                bucket["count"] += 1
+                user = ev.get("user")
+                if user:
+                    bucket["users"].add(str(user))
+                if event_time and (not bucket["first_time"] or event_time < bucket["first_time"]):
+                    bucket["first_time"] = event_time
+                if event_time and (not bucket["last_time"] or event_time > bucket["last_time"]):
+                    bucket["last_time"] = event_time
             continue
-        seen.add(key)
 
-        sev = "medium"
-        if "FAILED" in upper or "ROLLBACK" in upper:
+        key = (upper, edge, event_time, tuple(refs))
+        if key in seen_individual:
+            continue
+        seen_individual.add(key)
+
+        sev = _event_severity(name)
+        evidence = {
+            "event": name,
+            "edge": edge,
+            "user": ev.get("user"),
+            "severity": ev.get("severity"),
+            "time": event_time,
+            "message": (ev.get("message") or "")[:200],
+        }
+        for ref in refs:
+            if ref == "[Monitoring] Event Review" and upper not in _EVENT_REVIEW_ALERT_EVENTS:
+                continue
+            note = "Review orchestrator event for security or configuration impact."
+            if ref == "[Monitoring] Admin Activity Logs":
+                note = "Review administrative activity for unauthorised or unexpected changes."
+            elif ref == "[Monitoring] Config Change Logs":
+                note = "Review configuration change event and confirm it was authorised."
+            _append_event_finding(
+                findings, ctx, name, ref, sev,
+                f"Enterprise event: {name}",
+                evidence, note,
+            )
+
+    for (name, edge, ref), bucket in sorted(aggregate_buckets.items()):
+        sev = _event_severity(name, aggregate=True)
+        if _is_aggregate_failure_event(name) or ("LOGIN" in name and "FAIL" in name.upper()):
             sev = "high"
+        if ref == "[Monitoring] Admin Activity Logs" and name in {
+            "MGD_CONF_APPLIED", "FIREWALL_ENABLE",
+        }:
+            continue
+        if ref == "[Monitoring] Config Change Logs" and name in {
+            "USER_LOGIN_FAILURE", "USER_LOGIN_FAILED", "LOGIN_FAILED",
+            "CREATE_API_TOKEN", "DOWNLOAD_API_TOKEN", "REMOTE_ACTION", "ROLE_RESET",
+        }:
+            continue
+        if ref == "[Monitoring] Event Review" and name not in _EVENT_REVIEW_ALERT_EVENTS and name != "MGD_CONF_APPLIED":
+            continue
 
-        event_ref = "[Monitoring] Config Change Logs"
-        if "LOGIN" in upper:
-            event_ref = "[Monitoring] Admin Activity Logs"
-        findings.append(_finding(
-            ctx, "enterprise_events", sev,
-            f"Enterprise event: {name}",
-            "event/getEnterpriseEvents",
-            json.dumps({
-                "edge": edge,
-                "user": ev.get("user"),
-                "severity": ev.get("severity"),
-                "time": event_time,
-                "message": (ev.get("message") or "")[:200],
-            }, ensure_ascii=False),
-            "Review orchestrator event for security or configuration impact.",
-            methodology_ref=event_ref,
-            automation="partial",
-        ))
+        title = f"Enterprise event: {name} ({bucket['count']} occurrence(s))"
+        evidence = {
+            "event": name,
+            "edge": edge,
+            "count": bucket["count"],
+            "users": sorted(bucket["users"])[:10],
+            "first_time": bucket["first_time"],
+            "last_time": bucket["last_time"],
+            "sample_message": bucket["sample_message"],
+        }
+        note = "Review aggregated orchestrator events in the lookback window."
+        if ref == "[Monitoring] Admin Activity Logs":
+            note = "Review repeated administrative or authentication events."
+        elif ref == "[Monitoring] Config Change Logs":
+            note = "Review aggregated configuration change activity."
+        elif ref == "[Monitoring] Event Review":
+            note = "Security-relevant events detected during automated event review."
+        _append_event_finding(findings, ctx, name, ref, sev, title, evidence, note)
 
-    for (name, edge), bucket in sorted(failure_buckets.items()):
-        findings.append(_finding(
-            ctx, "enterprise_events", "high",
-            f"Enterprise event: {name} ({bucket['count']} occurrence(s))",
-            "event/getEnterpriseEvents",
-            json.dumps({
-                "edge": edge,
-                "count": bucket["count"],
-                "users": sorted(bucket["users"])[:10],
-                "first_time": bucket["first_time"],
-                "last_time": bucket["last_time"],
-                "sample_message": bucket["sample_message"],
-            }, ensure_ascii=False),
-            "Review repeated authentication failures for brute-force or credential issues.",
-            methodology_ref="[Monitoring] Admin Activity Logs",
-            automation="partial",
-        ))
+    top_types = sorted(review_counts.items(), key=lambda kv: (-kv[1], kv[0]))[:15]
+    security_count = sum(
+        count for event_name, count in review_counts.items()
+        if event_name in _EVENT_REVIEW_ALERT_EVENTS
+        or event_name.startswith("MGD_CONF_")
+        or event_name in _ADMIN_ACTIVITY_EVENTS
+    )
+    _append_event_finding(
+        findings, ctx, "EVENT_REVIEW_SUMMARY", "[Monitoring] Event Review", "info",
+        f"Enterprise event review: {sum(review_counts.values())} reviewable event(s) in {hours}h window",
+        {
+            "hours": hours,
+            "totalEvents": len(events),
+            "reviewableEvents": sum(review_counts.values()),
+            "securityRelevantEvents": security_count,
+            "eventTypes": [{"event": k, "count": v} for k, v in top_types],
+            "ignoredRoutineLogins": all_counts.get("BROWSER_ENTERPRISE_LOGIN", 0),
+        },
+        "Review event inventory; investigate security-relevant types and confirm alerting coverage.",
+    )
 
     return findings
 
@@ -2537,7 +2989,7 @@ HARDENING_CONTROLS = {
     "ntp":           "NTP / time synchronisation",
     "softwareUpdate":"Software update policy",
     "snmp":          "SNMP / monitoring telemetry",
-    "tacacs":        "Centralised admin authentication (TACACS)",
+    "tacacs":        "Centralised admin authentication (TACACS/RADIUS)",
     "ccFirewall":    "Firewall control block",
     "segments":      "Network segmentation",
     "bfd":           "BFD link-failure detection",
@@ -2583,6 +3035,18 @@ _LAN_NET_FIELDS  = [("disabled",), ("advertise",), ("pingResponse",), ("dnsProxy
 _LAN_IF_FIELDS   = [("disabled",), ("portMode",), ("untaggedVlan",), ("vlanIds",)]
 _WAN_IF_FIELDS   = [("disabled",), ("wanOverlay",), ("encryptOverlay",),
                     ("natDirect",), ("pingResponse",), ("addressing", "type")]
+_HA_DIFF_SUPPRESS_FIELDS = {
+    "lan.networks": {
+        ("pingResponse",), ("advertise",), ("disabled",),
+        ("dhcp", "enabled"), ("dnsProxy",),
+    },
+    "lan.interfaces": {
+        ("disabled",), ("vlanIds",), ("untaggedVlan",), ("portMode",),
+    },
+    "routedInterfaces": {
+        ("pingResponse",), ("disabled",), ("addressing", "type"),
+    },
+}
 
 
 def _downgrade_severity(severity: str) -> str:
@@ -2608,7 +3072,8 @@ def _apply_ha_severity(ctx: dict, severity: str) -> str:
 
 
 def _compare_keyed_list(ctx, p_list, e_list, key_field, object_label,
-                        check_fields, category, findings, severity_map=None) -> None:
+                        check_fields, category, findings, severity_map=None,
+                        methodology_ref="[System] Config Consistency Real") -> None:
     p_map = index_by(p_list or [], key_field)
     e_map = index_by(e_list or [], key_field)
     all_keys = sorted(set(p_map) | set(e_map))
@@ -2620,13 +3085,17 @@ def _compare_keyed_list(ctx, p_list, e_list, key_field, object_label,
             findings.append(_finding(ctx, "config_diff", _apply_ha_severity(ctx, "high"),
                 f"{object_label} present in profile but missing on edge", loc,
                 json.dumps(p, ensure_ascii=False)[:200],
-                "Verify whether this was intentionally removed at the edge level."))
+                "Verify whether this was intentionally removed at the edge level.",
+                methodology_ref=methodology_ref))
             continue
         if e and not p:
+            if _is_ha_edge(ctx) and object_label == "routedInterfaces":
+                continue
             findings.append(_finding(ctx, "config_diff", _apply_ha_severity(ctx, "low"),
                 f"Additional {object_label} on edge not in profile baseline", loc,
                 json.dumps(e, ensure_ascii=False)[:200],
-                "Confirm this edge-specific addition is intended and has been reviewed."))
+                "Confirm this edge-specific addition is intended and has been reviewed.",
+                methodology_ref=methodology_ref))
             continue
         for path in check_fields:
             pv, ev = p, e
@@ -2640,6 +3109,10 @@ def _compare_keyed_list(ctx, p_list, e_list, key_field, object_label,
             if not valid:
                 continue
             if pv != ev:
+                if _is_ha_edge(ctx):
+                    suppress = _HA_DIFF_SUPPRESS_FIELDS.get(object_label, set())
+                    if tuple(path) in suppress:
+                        continue
                 sev = "medium"
                 if severity_map and path in severity_map:
                     sev = severity_map[path]
@@ -2647,7 +3120,8 @@ def _compare_keyed_list(ctx, p_list, e_list, key_field, object_label,
                     f"{object_label} field differs from profile baseline",
                     f"{loc}.{'.'.join(path)}",
                     f"profile={json.dumps(pv)}, edge={json.dumps(ev)}",
-                    "Review whether this edge-level override is intentional and approved."))
+                    "Review whether this edge-level override is intentional and approved.",
+                    methodology_ref=methodology_ref))
 
 
 def _infer_profile_routed_interfaces(profile_cfg: dict, edge_portal: dict) -> list:
@@ -3587,6 +4061,319 @@ def analyse_dormant_users(ctx: dict, users: list, findings: list) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# MODULE 11 — ISOLATION (shared resources, wireless security)
+# ─────────────────────────────────────────────────────────────────────────────
+
+_WIFI_MODULE_HINTS = ("wifi", "wlan", "wireless", "radio")
+_WEAK_WIFI_MODES = {
+    "open", "wpa", "wpa-psk", "wpa2", "wpa2-psk", "wpa3-psk", "psk", "personal", "none",
+}
+_STRONG_WIFI_HINTS = ("enterprise", "802.1x", "wpa2-enterprise", "wpa-enterprise", "wpa3-enterprise")
+_NO_WIFI_MODEL_SUFFIXES = ("-n", "-nw")
+_WIFI_CAPABLE_MODEL_MARKERS = ("710", "7105g", "710-w", "710w", "-lte", "lte", "wifi", "wlan")
+
+
+def _edge_has_wifi_hardware(edge_portal: dict) -> bool:
+    """True only for edge models that can actually serve integrated Wi-Fi."""
+    if not isinstance(edge_portal, dict):
+        return False
+    model = (edge_portal.get("modelNumber") or "").lower().strip()
+    if not model:
+        return False
+    if any(model.endswith(suffix) for suffix in _NO_WIFI_MODEL_SUFFIXES):
+        return False
+    if model in {"edge3800", "edge3810", "edge3400", "edge2000"}:
+        return False
+    if any(marker in model for marker in _WIFI_CAPABLE_MODEL_MARKERS):
+        return True
+    # Non-N 5x0/6x0 branch models may ship with integrated Wi-Fi (610/620/640/680 without -N).
+    if any(token in model for token in ("edge510", "edge520", "edge540", "edge610", "edge620", "edge640", "edge680")):
+        return True
+    return False
+
+
+def _is_wifi_enabled(cfg: dict) -> bool:
+    if not isinstance(cfg, dict):
+        return False
+    disabled = cfg.get("disabled")
+    if disabled is True or str(disabled).lower() in {"1", "true", "yes"}:
+        return False
+    enabled = cfg.get("enabled", cfg.get("isEnabled"))
+    if enabled is False or str(enabled).lower() in {"0", "false", "disabled"}:
+        return False
+    if enabled in (True, 1) or str(enabled).lower() in {"1", "true", "enabled"}:
+        return True
+    if disabled is False or str(disabled).lower() in {"0", "false", "no"}:
+        return True
+    return False
+
+
+def _wifi_security_mode(cfg: dict) -> str:
+    if not isinstance(cfg, dict):
+        return ""
+    for key in ("securityMode", "security", "authentication", "authMode", "encryption", "wpaMode"):
+        val = cfg.get(key)
+        if val is not None and str(val).strip():
+            return str(val).strip().lower().replace("_", "-")
+    return ""
+
+
+def _wifi_uses_radius(cfg: dict) -> bool:
+    if not isinstance(cfg, dict):
+        return False
+    for key in ("radiusAuthentication", "useRadius", "radiusEnabled"):
+        val = cfg.get(key)
+        if val in (True, 1) or str(val).lower() in {"1", "true", "enabled"}:
+            return True
+    if cfg.get("radius") or cfg.get("radiusServers"):
+        return True
+    return False
+
+
+def _collect_wifi_configs(obj, path: str = "", results: list = None) -> list:
+    """Return (path, config_dict) tuples for Wi-Fi SSID/radio settings."""
+    results = results if results is not None else []
+    if isinstance(obj, dict):
+        if _is_wireless_interface(obj):
+            results.append((path, obj))
+            return results
+        for key, val in obj.items():
+            if key.lower() in _WIFI_MODULE_HINTS or key.lower() in {"ssids", "radios"}:
+                _collect_wifi_configs(val, f"{path}.{key}" if path else key, results)
+    elif isinstance(obj, list):
+        for idx, val in enumerate(obj):
+            if isinstance(val, dict) and _is_wireless_interface(val):
+                results.append((f"{path}[{idx}]", val))
+            else:
+                _collect_wifi_configs(val, f"{path}[{idx}]", results)
+    return results
+
+
+def _profile_lan_interfaces_for_edge(profile_cfg: dict, edge_portal: dict) -> list:
+    """Return profile LAN interfaces for the edge hardware model only."""
+    if not _edge_has_wifi_hardware(edge_portal):
+        return []
+    models = profile_cfg.get("models") or {}
+    family = edge_portal.get("deviceFamily", "")
+    model = (edge_portal.get("modelNumber") or "").lower()
+    if "-lte" in model or model.endswith("lte"):
+        candidates = ["edge610lte", "edge6X0"]
+    elif "6x0" in family.lower() or "610" in model:
+        candidates = ["edge6X0", "edge610lte"]
+    elif "3x10" in model or "3810" in model:
+        candidates = ["edge3X10", "edge3X00"]
+    elif "3x00" in family.lower() or "3800" in model:
+        candidates = ["edge3X00", "edge3X10"]
+    elif "500" in model or "510" in model:
+        candidates = ["edge500", "edge5X0"]
+    elif any(marker in model for marker in ("710", "7105g")):
+        candidates = ["edge710", "edge7105g", "edge7X0", "edge6X0"]
+    else:
+        candidates = [k for k, v in models.items() if isinstance(v, dict) and "lan" in v]
+    for candidate in candidates:
+        interfaces = get_nested(models, candidate, "lan", "interfaces")
+        if isinstance(interfaces, list):
+            return interfaces
+    return []
+
+
+def _is_wireless_interface(cfg: dict) -> bool:
+    if not isinstance(cfg, dict):
+        return False
+    if str(cfg.get("type", "")).lower() in {"wifi", "wlan", "wireless"}:
+        return True
+    if cfg.get("ssid") and (
+        cfg.get("securityMode") or cfg.get("security") or cfg.get("authentication")
+    ):
+        return True
+    return False
+
+
+def _walk_config_roots(
+    profile_cfg: dict,
+    edge_cfg: dict,
+    edge_modules: dict,
+    profile_modules: dict,
+    edge_portal: dict,
+) -> list:
+    roots = []
+    if isinstance(edge_cfg, dict):
+        roots.append(("edgeConfig", edge_cfg))
+    for ifc in get_nested(edge_cfg or {}, "lan", "interfaces") or []:
+        if _is_wireless_interface(ifc):
+            roots.append((f"edgeConfig.lan.interfaces[{ifc.get('name', '?')}]", ifc))
+    for ifc in _profile_lan_interfaces_for_edge(profile_cfg or {}, edge_portal or {}):
+        if _is_wireless_interface(ifc):
+            roots.append((f"profileConfig.lan.interfaces[{ifc.get('name', '?')}]", ifc))
+    for container, label in ((edge_modules, "edgeModules"), (profile_modules, "profileModules")):
+        if not isinstance(container, dict):
+            continue
+        for mod_name in container:
+            if any(hint in mod_name.lower() for hint in _WIFI_MODULE_HINTS):
+                data = _module_data(container, mod_name)
+                if data:
+                    roots.append((f"{label}.{mod_name}", data))
+    return roots
+
+
+def analyse_wireless_security(
+    ctx: dict,
+    profile_cfg: dict,
+    edge_cfg: dict,
+    edge_modules: dict,
+    profile_modules: dict,
+    findings: list,
+) -> None:
+    """
+    [Isolation] Wireless Security — only evaluates edges with Wi-Fi hardware and
+    actively enabled WLAN interfaces. Flags weak modes (PSK/open) and missing RADIUS.
+    """
+    edge_portal = ctx.get("edgePortalRecord") or {}
+    if not _edge_has_wifi_hardware(edge_portal):
+        return
+
+    wifi_configs = []
+    for root_path, root_obj in _walk_config_roots(
+        profile_cfg, edge_cfg, edge_modules or {}, profile_modules or {}, edge_portal,
+    ):
+        for path, cfg in _collect_wifi_configs(root_obj, root_path):
+            if _is_wifi_enabled(cfg):
+                wifi_configs.append((path, cfg))
+
+    seen_ssids = set()
+    for path, cfg in wifi_configs:
+        ssid = cfg.get("ssid") or cfg.get("name") or path
+        if ssid in seen_ssids:
+            continue
+        seen_ssids.add(ssid)
+
+        mode = _wifi_security_mode(cfg)
+        has_radius = _wifi_uses_radius(cfg)
+        if not mode:
+            findings.append(_finding(
+                ctx, "wireless_security", "medium",
+                f"Wireless enabled but security mode not declared for SSID '{ssid}'",
+                path,
+                json.dumps({"ssid": ssid, "path": path}, ensure_ascii=False),
+                "Confirm WPA-Enterprise with RADIUS AAA is configured for wireless.",
+                methodology_ref="[Isolation] Wireless Security",
+                automation="partial",
+            ))
+            continue
+
+        if mode in _WEAK_WIFI_MODES or "psk" in mode or "personal" in mode or mode == "open":
+            findings.append(_finding(
+                ctx, "wireless_security", "high",
+                f"Wireless SSID '{ssid}' uses weak security mode: {mode}",
+                path,
+                json.dumps({"ssid": ssid, "securityMode": mode}, ensure_ascii=False),
+                "Use WPA-Enterprise with RADIUS AAA per wireless hardening guidance.",
+                methodology_ref="[Isolation] Wireless Security",
+                automation="partial",
+            ))
+            continue
+
+        if not any(hint in mode for hint in _STRONG_WIFI_HINTS):
+            findings.append(_finding(
+                ctx, "wireless_security", "medium",
+                f"Wireless SSID '{ssid}' does not use WPA-Enterprise: {mode}",
+                path,
+                json.dumps({"ssid": ssid, "securityMode": mode}, ensure_ascii=False),
+                "Configure WPA-Enterprise with RADIUS for wireless authentication.",
+                methodology_ref="[Isolation] Wireless Security",
+                automation="partial",
+            ))
+            continue
+
+        if not has_radius:
+            findings.append(_finding(
+                ctx, "wireless_security", "medium",
+                f"Wireless SSID '{ssid}' lacks RADIUS AAA configuration",
+                path,
+                json.dumps({"ssid": ssid, "securityMode": mode}, ensure_ascii=False),
+                "Bind wireless authentication to enterprise RADIUS/AAA servers.",
+                methodology_ref="[Isolation] Wireless Security",
+                automation="partial",
+            ))
+
+
+def analyse_shared_resources(
+    ctx: dict,
+    enterprise_record: dict,
+    gateways: list,
+    assignments_by_gateway: dict,
+    scope_edge_names: set,
+    findings: list,
+) -> None:
+    """
+    [Isolation] Shared Resources — enterprise gateway pool and gateway assignment inventory.
+    Complements [Net] Gateway Assignment Review with enterprise-level shared-resource context.
+    """
+    enterprise = enterprise_record if isinstance(enterprise_record, dict) else {}
+    gateway_list = [g for g in (gateways or []) if isinstance(g, dict)]
+    pool_id = enterprise.get("gatewayPoolId")
+    network_id = enterprise.get("networkId")
+
+    gateway_summary = [
+        {
+            "id": g.get("id"),
+            "name": g.get("name"),
+            "gatewayState": g.get("gatewayState"),
+            "assignedEdgeCount": len(assignments_by_gateway.get(g.get("id"), []) or []),
+        }
+        for g in gateway_list
+    ]
+    findings.append(_finding(
+        ctx, "shared_resources", "info",
+        f"Enterprise shared resources: gatewayPoolId={pool_id}, gateways={len(gateway_list)}",
+        "enterprise/getEnterprise",
+        json.dumps({
+            "gatewayPoolId": pool_id,
+            "networkId": network_id,
+            "gateways": gateway_summary,
+        }, ensure_ascii=False),
+        "Review gateway pool and shared service assignments for cross-topology exposure.",
+        methodology_ref="[Isolation] Shared Resources",
+        automation="partial",
+    ))
+
+    if not gateway_list:
+        return
+
+    if len(gateway_list) > 1:
+        findings.append(_finding(
+            ctx, "shared_resources", "low",
+            f"Enterprise has {len(gateway_list)} gateways in shared pool {pool_id}",
+            "enterprise/getEnterpriseServices",
+            json.dumps(gateway_summary, ensure_ascii=False),
+            "Confirm multiple gateways in the pool are intentional and segmented appropriately.",
+            methodology_ref="[Isolation] Shared Resources",
+            automation="partial",
+        ))
+
+    for gw in gateway_list:
+        gw_id = gw.get("id")
+        gw_name = gw.get("name", str(gw_id))
+        assigned = assignments_by_gateway.get(gw_id, []) or []
+        assigned_names = {
+            a.get("edgeName") or a.get("name")
+            for a in assigned if isinstance(a, dict)
+        }
+        assigned_names.discard(None)
+        out_of_scope = sorted(assigned_names - scope_edge_names)
+        if out_of_scope:
+            findings.append(_finding(
+                ctx, "shared_resources", "medium",
+                f"Gateway {gw_name} has assignments outside review scope",
+                f"gateway[{gw_id}].assignments",
+                json.dumps({"gateway": gw_name, "outOfScopeEdges": out_of_scope}, ensure_ascii=False),
+                "Verify shared gateway assignments are limited to intended edges/tenants.",
+                methodology_ref="[Isolation] Shared Resources",
+                automation="partial",
+            ))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # METHODOLOGY — XLSX loader, coverage, manual checklist, Dradis export
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -3636,9 +4423,9 @@ _AUTOMATION_TIER_BY_TITLE = {
     "[System] High Availability Configuration": "automated",
     "[System] Inactive Edge Review": "automated",
     "[Isolation] Tenant Separation": "manual",
-    "[Isolation] Shared Resources": "manual",
+    "[Isolation] Shared Resources": "partial",
     "[Isolation] Profile Inheritance": "partial",
-    "[Isolation] Wireless Security": "manual",
+    "[Isolation] Wireless Security": "partial",
     "[FW] Advanced Security Features (ATP/IDPS/URL)": "partial",
 }
 
@@ -3673,14 +4460,17 @@ _SCRIPT_MODULE_BY_TITLE = {
     "[System] Patch Levels": "analyse_software_update",
     "[System] Config Consistency Real": "analyse_structural_diff",
     "[System] Edge Config Stack Review": "get_edge_configuration_modules",
+    "[System] Edge Certificate Authentication": "analyse_edge_certificate_auth",
     "[System] NTP Time Synchronisation": "analyse_device_hardening",
     "[System] Edge Override Governance": "analyse_override_governance",
     "[System] Edge Admin AAA (TACACS/RADIUS)": "analyse_device_hardening",
     "[System] SNMP Hardening": "analyse_device_hardening",
     "[System] BFD Link Detection": "analyse_bfd",
-    "[System] High Availability Configuration": "analyse_ha_config",
+    "[System] High Availability Configuration": "analyse_ha_config, analyse_ha_pair_parity",
     "[System] Inactive Edge Review": "analyse_edge_inventory",
-    "[Isolation] Profile Inheritance": "analyse_segmentation, analyse_structural_diff",
+    "[Isolation] Profile Inheritance": "analyse_segmentation",
+    "[Isolation] Shared Resources": "analyse_shared_resources",
+    "[Isolation] Wireless Security": "analyse_wireless_security",
     "[FW] Advanced Security Features (ATP/IDPS/URL)": "analyse_security_features",
 }
 
@@ -3701,6 +4491,12 @@ _TITLE_INFERENCE = [
     ("SNMPv2c", "[System] SNMP Hardening"),
     ("SNMP enabled", "[System] SNMP Hardening"),
     ("TACACS", "[System] Edge Admin AAA (TACACS/RADIUS)"),
+    ("admin authentication not configured", "[System] Edge Admin AAA (TACACS/RADIUS)"),
+    ("pre-shared key authentication", "[System] Edge Certificate Authentication"),
+    ("certificate authentication mode", "[System] Edge Certificate Authentication"),
+    ("Edge certificate expiring", "[System] Edge Certificate Authentication"),
+    ("Edge certificate expired", "[System] Edge Certificate Authentication"),
+    ("No edge certificate found", "[System] Edge Certificate Authentication"),
     ("overlay encryption disabled", "[Net] Overlay Traffic Encryption"),
     ("software version below", "[System] Edge Versions"),
     ("end-of-support", "[System] Edge Versions"),
@@ -3719,8 +4515,12 @@ _TITLE_INFERENCE = [
     ("differs from profile", "[System] Config Consistency Real"),
     ("present in profile but missing", "[System] Config Consistency Real"),
     ("Additional ", "[System] Config Consistency Real"),
-    ("Enterprise event", "[Monitoring] Config Change Logs"),
+    ("Enterprise event review:", "[Monitoring] Event Review"),
+    ("Enterprise event:", "[Monitoring] Event Review"),
     ("USER_LOGIN_FAILURE", "[Monitoring] Admin Activity Logs"),
+    ("CREATE_API_TOKEN", "[Monitoring] Admin Activity Logs"),
+    ("REMOTE_ACTION", "[Monitoring] Admin Activity Logs"),
+    ("MGD_CONF_APPLIED", "[Monitoring] Config Change Logs"),
     ("BFD not enabled", "[System] BFD Link Detection"),
     ("DNS servers not", "[Net] DNS Configuration"),
     ("Weak VPN crypto", "[VPN] Encryption Strength"),
@@ -3740,8 +4540,18 @@ _TITLE_INFERENCE = [
     ("Enterprise user dormant", "[Mgmt] Dormant User Account Review"),
     ("never logged in", "[Mgmt] Dormant User Account Review"),
     ("Inactive enterprise user", "[Mgmt] Dormant User Account Review"),
+    ("Wireless SSID", "[Isolation] Wireless Security"),
+    ("Wireless enabled", "[Isolation] Wireless Security"),
+    ("shared resources", "[Isolation] Shared Resources"),
+    ("gateway pool", "[Isolation] Shared Resources"),
+    ("Profile-defined segment missing", "[Isolation] Profile Inheritance"),
+    ("Edge contains segment not defined", "[Isolation] Profile Inheritance"),
+    ("VPN edge-to-datacentre setting differs", "[Isolation] Profile Inheritance"),
+    ("more NAT rules than profile", "[Isolation] Profile Inheritance"),
     ("HA edge state", "[System] High Availability Configuration"),
     ("HA peer last contact", "[System] High Availability Configuration"),
+    ("HA pair config mismatch", "[System] High Availability Configuration"),
+    ("standby serial metadata", "[System] High Availability Configuration"),
     ("override active", "[System] Edge Override Governance"),
     ("Software update", "[System] Patch Levels"),
     ("NAT rule", "[FW] NAT Exposure"),
@@ -3779,6 +4589,27 @@ def _script_module_for_check(row: tuple, idx: dict, title: str) -> str:
     return _SCRIPT_MODULE_BY_TITLE.get(title, "")
 
 
+def _methodology_builtin_drift(checks: list) -> list:
+    """Return human-readable drift messages when XLSX rows differ from built-in maps."""
+    drift = []
+    by_title = {c["title"]: c for c in checks}
+    for title, tier in _AUTOMATION_TIER_BY_TITLE.items():
+        row = by_title.get(title)
+        if not row:
+            drift.append(f"built-in only (missing from XLSX): {title}")
+            continue
+        xlsx_tier = row.get("automationTier", "")
+        if xlsx_tier and xlsx_tier != tier:
+            drift.append(f"tier mismatch for {title}: XLSX={xlsx_tier} builtin={tier}")
+        xlsx_mod = (row.get("scriptModule") or "").strip()
+        builtin_mod = _SCRIPT_MODULE_BY_TITLE.get(title, "")
+        if xlsx_mod and xlsx_mod != builtin_mod:
+            drift.append(f"module mismatch for {title}: XLSX={xlsx_mod} builtin={builtin_mod}")
+    for title in sorted(set(by_title) - set(_AUTOMATION_TIER_BY_TITLE)):
+        drift.append(f"XLSX only (missing from built-in): {title}")
+    return drift
+
+
 def load_methodology_checks(xlsx_path: str = None) -> list:
     """Load methodology rows from XLSX (Automation + ScriptModule); fall back to built-in map."""
     path = xlsx_path or METHODOLOGY_XLSX
@@ -3805,6 +4636,17 @@ def load_methodology_checks(xlsx_path: str = None) -> list:
                 })
             wb.close()
             if checks:
+                drift = _methodology_builtin_drift(checks)
+                if drift:
+                    print(
+                        "[WARN] Methodology XLSX differs from built-in maps in velo_final.py "
+                        f"({len(drift)} item(s)). XLSX is used for coverage; update built-in fallback "
+                        "if you rely on openpyxl-less runs:"
+                    )
+                    for msg in drift[:8]:
+                        print(f"       - {msg}")
+                    if len(drift) > 8:
+                        print(f"       - ... +{len(drift) - 8} more")
                 return checks
         except ImportError:
             print("[WARN] openpyxl not installed — using built-in methodology titles")
@@ -4030,8 +4872,16 @@ def parse_args():
     )
     parser.add_argument(
         "--events",
+        dest="events",
         action="store_true",
-        help="Fetch enterprise events (MGD_CONF_*, auth) via Portal API",
+        default=EVENTS_DEFAULT,
+        help="Fetch enterprise events (admin/config monitoring) via Portal API (default: on)",
+    )
+    parser.add_argument(
+        "--no-events",
+        dest="events",
+        action="store_false",
+        help="Skip enterprise event fetch and event-based monitoring checks",
     )
     parser.add_argument(
         "--events-hours",
@@ -4042,16 +4892,99 @@ def parse_args():
     )
     parser.add_argument(
         "--deep",
+        dest="deep",
         action="store_true",
         default=PHASE4_DEFAULT,
-        help="Enable Phase 4 collectors (route table, gateway assignments)",
+        help="Route table + gateway assignment collectors (default: on)",
+    )
+    parser.add_argument(
+        "--no-deep",
+        dest="deep",
+        action="store_false",
+        help="Skip route table and gateway assignment collectors",
     )
     parser.add_argument(
         "--no-coverage-report",
         action="store_true",
         help="Skip methodology coverage report generation",
     )
+    parser.add_argument(
+        "--scope-edges",
+        default=None,
+        metavar="NAMES",
+        help="Comma-separated edge names to limit scope (overrides VCO_SCOPE_EDGES)",
+    )
+    parser.add_argument(
+        "--methodology-xlsx",
+        "--xlsx",
+        dest="methodology_xlsx",
+        default=None,
+        metavar="PATH",
+        help="Methodology workbook path (overrides VCO_METHODOLOGY_XLSX)",
+    )
+    parser.add_argument(
+        "--output-dir",
+        default=None,
+        metavar="PATH",
+        help="Write all output to this directory (default: vco_output/<UTC timestamp>)",
+    )
+    parser.add_argument(
+        "--min-edge-version",
+        default=None,
+        metavar="VER",
+        help="Minimum acceptable edge software version, e.g. 6.0.0 (overrides VCO_MIN_EDGE_VERSION)",
+    )
+    parser.add_argument(
+        "--verify-tls",
+        action="store_true",
+        default=None,
+        help="Verify TLS certificates (overrides VCO_VERIFY_TLS)",
+    )
+    parser.add_argument(
+        "--no-verify-tls",
+        dest="verify_tls",
+        action="store_false",
+        help="Disable TLS certificate verification",
+    )
+    parser.add_argument(
+        "--dormant-user-days",
+        type=int,
+        default=None,
+        metavar="N",
+        help=f"Dormant user threshold in days (default: {DORMANT_USER_DAYS})",
+    )
+    parser.add_argument(
+        "--stale-edge-days",
+        type=int,
+        default=None,
+        metavar="N",
+        help=f"Stale edge threshold in days (default: {STALE_EDGE_DAYS})",
+    )
     return parser.parse_args()
+
+
+def apply_cli_overrides(args) -> None:
+    """Apply CLI flags over environment defaults for this run."""
+    global OUTPUT_DIR, VCO_SCOPE_EDGES, METHODOLOGY_XLSX
+    global MIN_EDGE_VERSION, VERIFY_TLS, DORMANT_USER_DAYS, STALE_EDGE_DAYS
+
+    OUTPUT_DIR = _resolve_output_dir(args.output_dir)
+    if args.scope_edges is not None:
+        VCO_SCOPE_EDGES = [x.strip() for x in args.scope_edges.split(",") if x.strip()]
+    if args.methodology_xlsx:
+        METHODOLOGY_XLSX = args.methodology_xlsx
+    if args.min_edge_version is not None:
+        MIN_EDGE_VERSION = args.min_edge_version.strip()
+    if args.verify_tls is not None:
+        VERIFY_TLS = args.verify_tls
+        api2_client.verify = VERIFY_TLS
+        portal_client.verify = VERIFY_TLS
+        if not VERIFY_TLS:
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    if args.dormant_user_days is not None:
+        DORMANT_USER_DAYS = args.dormant_user_days
+    if args.stale_edge_days is not None:
+        STALE_EDGE_DAYS = args.stale_edge_days
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -4062,6 +4995,7 @@ def main() -> None:
     if not any(a in sys.argv for a in ("-h", "--help")):
         _require_env()
     args = parse_args()
+    apply_cli_overrides(args)
     print("=" * 72)
     print("  velo_final.py — VeloCloud profile-aware collector + security review")
     print("=" * 72)
@@ -4071,8 +5005,15 @@ def main() -> None:
         print(f"  Scope:      {len(VCO_SCOPE_EDGES)} edge(s)")
     if args.events:
         print(f"  Events:     last {args.events_hours}h")
+    else:
+        print("  Events:     disabled (--no-events)")
+    if args.deep:
+        print("  Deep:       route table + gateway assignments")
+    else:
+        print("  Deep:       disabled (--no-deep)")
     if MIN_EDGE_VERSION:
         print(f"  Min version: {MIN_EDGE_VERSION}")
+    print(f"  Output:     {OUTPUT_DIR}")
 
     # ── 1. Portal edge list ──────────────────────────────────────────────────
     print("\n[1/6] Fetching Portal edge list...")
@@ -4153,6 +5094,7 @@ def main() -> None:
         ds_cfg = {}
         qos_cfg = {}
         edge_certs = []
+        modules = {}
         if enid:
             modules = get_edge_configuration_modules(enid) or {}
             fw_cfg = _module_data(modules, "firewall")
@@ -4181,6 +5123,7 @@ def main() -> None:
         rec["deviceSettingsModule"] = ds_cfg
         rec["qosConfig"]           = qos_cfg
         rec["edgeCertificates"]    = _sanitize_cert_records(edge_certs)
+        rec["configurationModules"] = modules if enid else {}
         save_json(os.path.join(combined_dir, f"{safe_name(en)}_combined.json"), rec)
         combined_records.append(rec)
 
@@ -4192,6 +5135,9 @@ def main() -> None:
     enterprise_event_findings = []
     scope_edge_names = {item["edgeName"] for item in joined}
     overlay_peer_prefixes = build_overlay_peer_prefixes(combined_records)
+    enterprise_record = get_enterprise_record()
+    if enterprise_record:
+        save_json(os.path.join(OUTPUT_DIR, "mgmt", "enterprise.json"), enterprise_record)
 
     for rec in combined_records:
         ctx  = {k: rec[k] for k in
@@ -4258,18 +5204,29 @@ def main() -> None:
         analyse_ha_config(ctx, all_findings)
         analyse_security_features(ctx, fw_cfg, all_findings)
         analyse_edge_inventory(ctx, all_findings)
+        analyse_edge_certificate_auth(ctx, edge_certs, enterprise_record, all_findings)
         analyse_vpn_encryption_strength(ctx, cp_cfg, ds_mod, all_findings)
         analyse_vpn_certificate_validation(ctx, edge_certs, all_findings)
         analyse_vpn_key_rotation(ctx, edge_certs, all_findings)
+        analyse_wireless_security(
+            ctx, pcfg, ecfg,
+            rec.get("configurationModules") or {},
+            profile_modules_cache.get(ctx.get("profileNumericId")) or {},
+            all_findings,
+        )
         all_hardening.extend(evaluate_hardening(ctx, pcfg, ecfg))
+
+    analyse_ha_pair_parity(combined_records, all_findings)
 
     print("       Running enterprise management collectors (users, tokens, auth)...")
     mgmt_dir = os.path.join(OUTPUT_DIR, "mgmt")
-    enterprise_record = get_enterprise_record()
+    if not enterprise_record:
+        enterprise_record = get_enterprise_record()
     enterprise_users = get_enterprise_users()
     api_tokens = get_enterprise_api_tokens()
     if enterprise_record:
-        save_json(os.path.join(mgmt_dir, "enterprise.json"), enterprise_record)
+        if not os.path.exists(os.path.join(mgmt_dir, "enterprise.json")):
+            save_json(os.path.join(mgmt_dir, "enterprise.json"), enterprise_record)
     if enterprise_users:
         save_json(
             os.path.join(mgmt_dir, "enterprise_users.json"),
@@ -4285,6 +5242,18 @@ def main() -> None:
     analyse_enterprise_auth_mode(mgmt_ctx, enterprise_record, enterprise_users, all_findings)
     analyse_dormant_users(mgmt_ctx, enterprise_users, all_findings)
 
+    print("       Running isolation collectors (shared resources)...")
+    gateways = _extract_gateways_from_services(enterprise_services) if enterprise_services else []
+    assignments_by_gateway = {}
+    for gw in gateways:
+        gw_id = gw.get("id")
+        if gw_id is None:
+            continue
+        assignments_by_gateway[gw_id] = get_gateway_edge_assignments(gw_id) or []
+    analyse_shared_resources(
+        mgmt_ctx, enterprise_record, gateways, assignments_by_gateway, scope_edge_names, all_findings,
+    )
+
     if args.deep:
         print("       Running Phase 4 deep collectors (route table, gateways)...")
         routes_dir = os.path.join(OUTPUT_DIR, "routes")
@@ -4294,13 +5263,20 @@ def main() -> None:
             save_json(os.path.join(routes_dir, "enterprise_route_table.json"), route_data)
             analyse_route_table(route_data, all_findings)
         gateways = _extract_gateways_from_services(enterprise_services)
-        assignments_by_gateway = {}
+        if not assignments_by_gateway:
+            for gw in gateways:
+                gw_id = gw.get("id")
+                if gw_id is None:
+                    continue
+                assignments_by_gateway[gw_id] = get_gateway_edge_assignments(gw_id) or []
         for gw in gateways:
             gw_id = gw.get("id")
             if gw_id is None:
                 continue
-            assigned = get_gateway_edge_assignments(gw_id)
-            assignments_by_gateway[gw_id] = assigned
+            assigned = assignments_by_gateway.get(gw_id)
+            if assigned is None:
+                assigned = get_gateway_edge_assignments(gw_id) or []
+                assignments_by_gateway[gw_id] = assigned
             save_json(
                 os.path.join(gateways_dir, f"gateway_{gw_id}_assignments.json"),
                 assigned,
@@ -4315,7 +5291,9 @@ def main() -> None:
         events_path = os.path.join(OUTPUT_DIR, "enterprise_events.json")
         save_json(events_path, enterprise_events)
         print(f"       {len(enterprise_events)} event(s) retrieved")
-        enterprise_event_findings = analyse_enterprise_events(enterprise_events)
+        enterprise_event_findings = analyse_enterprise_events(
+            enterprise_events, args.events_hours,
+        )
         event_findings_path = os.path.join(OUTPUT_DIR, "enterprise_event_findings.json")
         save_json(event_findings_path, enterprise_event_findings)
         print(f"       {len(enterprise_event_findings)} event finding(s) after filtering")
@@ -4323,7 +5301,7 @@ def main() -> None:
     methodology_checks = []
     tier_lookup = _AUTOMATION_TIER_BY_TITLE
     if not args.no_coverage_report:
-        methodology_checks = load_methodology_checks()
+        methodology_checks = load_methodology_checks(METHODOLOGY_XLSX)
         tier_lookup = methodology_tier_lookup(methodology_checks)
 
     enrich_findings_methodology(all_findings, tier_lookup)

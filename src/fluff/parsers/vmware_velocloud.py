@@ -233,6 +233,17 @@ def _to_flat_text(record: dict, coverage_lines: list[str] | None = None) -> str:
     if certs:
         lines.extend(_flatten(certs, "certs"))
 
+    # Raw configuration modules dict (full portal modules, keyed by module type).
+    # Only non-redundant modules are flattened here; firewall/WAN/controlPlane/
+    # deviceSettings/QOS are already present via their dedicated prefixes above.
+    _ALREADY_FLATTENED = {"firewall", "WAN", "controlPlane", "deviceSettings", "QOS"}
+    config_modules = record.get("configurationModules") or {}
+    if isinstance(config_modules, dict):
+        for mod_name, mod_obj in config_modules.items():
+            if mod_name not in _ALREADY_FLATTENED and isinstance(mod_obj, dict):
+                data = mod_obj.get("data") or mod_obj
+                lines.extend(_flatten(data, f"modules.{mod_name}"))
+
     # Authoritative collector results (vco_check.* lines)
     if coverage_lines:
         lines.extend(coverage_lines)
