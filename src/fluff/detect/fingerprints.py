@@ -396,6 +396,20 @@ def detect(text: str) -> DetectionResult | None:
     if best_score < MINIMUM_SCORE:
         return None
 
+    # If the collector embedded an explicit nd-toad profile marker and it
+    # matched this profile, report 100% confidence — no ambiguity possible.
+    _marker_patterns = (
+        rf'"_nd_toad_profile"\s*:\s*"{re.escape(best_profile)}"',
+        rf'(?m)^_nd_toad_profile = {re.escape(best_profile)}',
+    )
+    if any(re.search(p, text, re.IGNORECASE) for p in _marker_patterns):
+        return DetectionResult(
+            profile=best_profile,
+            vendor=PROFILE_VENDOR[best_profile],
+            confidence=1.0,
+            signals=signals_matched[best_profile],
+        )
+
     # Normalize to 0–1 by treating the max possible score as 10.0
     max_possible = sum(w for _, w, _ in PROFILE_SIGNALS[best_profile] if w > 0) or 10.0
     confidence = min(best_score / max_possible, 1.0)
