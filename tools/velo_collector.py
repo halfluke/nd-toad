@@ -15,6 +15,7 @@ Detection modules:
   6. Device hardening             — NTP, syslog, SNMP, BFD, DNS, HA, overlay encryption
   6b. System certificate auth    — edge authentication mode + PKI certificate health
   6c. HA pair parity             — CPE0/CPE1 config symmetry (NTP, syslog, SNMP, AAA, BFD)
+  6d. Edge config stack review   — inheritance chain, override/module consistency
   7. Edge inventory               — offline/stale edges, activation, version review
   8. Enterprise events (optional) — --events: filtered MGD_CONF_* and auth events
   9. Methodology coverage         — XLSX-linked findings, manual checklist, Dradis CSV
@@ -37,6 +38,7 @@ Output layout:
     routes/enterprise_route_table.json   (--deep)
     gateways/gateway_<id>_assignments.json (--deep)
     certs/<edge>.json
+    stacks/<edge>.json
     mgmt/enterprise.json
     mgmt/enterprise_users.json
     mgmt/api_tokens.json
@@ -465,6 +467,178 @@ def get_edge_configuration_modules(edge_numeric_id: int) -> dict:
         request_id=60,
     )
     return result if isinstance(result, dict) else {}
+
+
+def get_edge_configuration_stack(edge_numeric_id: int) -> list:
+    """Portal RPC: full edge configuration stack (enterprise + edge-specific profiles)."""
+    result = portal_rpc(
+        "edge/getEdgeConfigurationStack",
+        {"edgeId": int(edge_numeric_id)},
+        request_id=61,
+    )
+    return result if isinstance(result, list) else []
+
+
+def _sanitize_stack(stack: list) -> list:
+    """Drop bulky module payloads; keep stack structure for review artifacts."""
+    sanitized = []
+    for entry in stack or []:
+        if not isinstance(entry, dict):
+            continue
+        mods = []
+        for mod in entry.get("modules") or []:
+            if not isinstance(mod, dict):
+                continue
+            mods.append({
+                k: v for k, v in mod.items()
+                if k not in {"data", "draftData", "previousData"}
+            })
+        sanitized.append({
+            k: v for k, v in entry.items()
+            if k != "modules"
+        })
+        sanitized[-1]["modules"] = mods
+    return sanitized
+
+
+def _stack_profile_summaries(stack: list) -> list:
+    summaries = []
+    for entry in stack or []:
+        if not isinstance(entry, dict):
+            continue
+        mod_names = sorted({
+            m.get("name")
+            for m in (entry.get("modules") or [])
+            if isinstance(m, dict) and m.get("name")
+        })
+        summaries.append({
+            "name": entry.get("name"),
+            "id": entry.get("id"),
+            "logicalId": entry.get("logicalId"),
+            "moduleNames": mod_names,
+        })
+    return summaries
+
+
+def _edge_specific_stack_entry(stack: list) -> dict | None:
+    """
+    Identify the edge-specific profile in the stack.
+    Prefer profiles that expose the activated-edge module set (deviceSettings + WAN + controlPlane),
+    or names containing 'Edge Specific'.
+    """
+    candidates = []
+    for entry in stack or []:
+        if not isinstance(entry, dict):
+            continue
+        mods = _stack_module_names(entry)
+        if {"deviceSettings", "WAN", "controlPlane"}.issubset(mods):
+            candidates.append(entry)
+    if candidates:
+        for entry in candidates:
+            if "edge specific" in str(entry.get("name", "")).lower():
+                return entry
+        return candidates[-1]
+    for entry in reversed(stack or []):
+        if isinstance(entry, dict):
+            return entry
+    return None
+
+
+def _stack_module_names(entry: dict) -> set:
+    if not isinstance(entry, dict):
+        return set()
+    return {
+        m.get("name")
+        for m in (entry.get("modules") or [])
+        if isinstance(m, dict) and m.get("name")
+    }
+
+
+_OVERRIDE_STACK_MODULES = {
+    "deviceSettings": "deviceSettings",
+    "firewall":       "firewall",
+    "qos":            "QOS",
+}
+
+_EDGE_SPECIFIC_REQUIRED_MODULES = ("deviceSettings", "WAN", "controlPlane")
+
+
+def analyse_edge_config_stack(ctx: dict, stack: list, findings: list) -> None:
+    """[System] Edge Config Stack Review — stack integrity and override consistency."""
+    summaries = _stack_profile_summaries(stack)
+    if not summaries:
+        findings.append(_finding(
+            ctx, "config_stack", "medium",
+            "Edge configuration stack unavailable or empty",
+            "edge/getEdgeConfigurationStack",
+            "empty or missing stack",
+            "Verify the edge is provisioned and configuration stack is readable via Orchestrator.",
+            methodology_ref="[System] Edge Config Stack Review",
+            automation="partial",
+        ))
+        return
+
+    assigned_pid = ctx.get("profileNumericId")
+    stack_ids = {s.get("id") for s in summaries if s.get("id") is not None}
+    if assigned_pid and assigned_pid not in stack_ids:
+        findings.append(_finding(
+            ctx, "config_stack", "low",
+            "Assigned enterprise profile not present in edge configuration stack",
+            "edge/getEdgeConfigurationStack",
+            json.dumps({
+                "assignedProfileId": assigned_pid,
+                "assignedProfileName": ctx.get("profileName"),
+                "stackProfiles": summaries,
+            }, ensure_ascii=False),
+            "Confirm profile assignment matches the inheritance chain shown in Configure → Edge.",
+            methodology_ref="[System] Edge Config Stack Review",
+            automation="partial",
+        ))
+
+    edge_specific = _edge_specific_stack_entry(stack)
+    edge_specific_summary = next(
+        (s for s in summaries if s.get("id") == (edge_specific or {}).get("id")),
+        summaries[-1] if summaries else None,
+    )
+    edge_mods = _stack_module_names(edge_specific)
+    portal = ctx.get("edgePortalRecord") or {}
+    activation = str(portal.get("activationState", "")).upper()
+    if activation == "ACTIVATED":
+        missing = [
+            mod for mod in _EDGE_SPECIFIC_REQUIRED_MODULES
+            if mod not in edge_mods
+        ]
+        if missing:
+            findings.append(_finding(
+                ctx, "config_stack", "medium",
+                "Edge-specific profile missing expected configuration modules",
+                "edge/getEdgeConfigurationStack.modules",
+                json.dumps({
+                    "edgeSpecificProfile": edge_specific_summary,
+                    "missingModules": missing,
+                }, ensure_ascii=False),
+                "Activated edges should expose deviceSettings, WAN, and controlPlane on the edge-specific profile.",
+                methodology_ref="[System] Edge Config Stack Review",
+                automation="partial",
+            ))
+
+    overrides = ctx.get("edgeOverrides") or {}
+    for override_key, module_name in _OVERRIDE_STACK_MODULES.items():
+        if not overrides.get(override_key):
+            continue
+        if module_name not in edge_mods:
+            findings.append(_finding(
+                ctx, "config_stack", "low",
+                f"Override flag set for {override_key} but edge-specific profile lacks {module_name} module",
+                f"edgeOverrides.{override_key}",
+                json.dumps({
+                    "override": overrides,
+                    "edgeSpecificModules": sorted(edge_mods),
+                }, ensure_ascii=False),
+                "Align override flags with modules present on the edge-specific configuration profile.",
+                methodology_ref="[System] Edge Config Stack Review",
+                automation="partial",
+            ))
 
 
 def get_edge_certificates(edge_numeric_id: int) -> list:
@@ -4459,7 +4633,7 @@ _SCRIPT_MODULE_BY_TITLE = {
     "[System] Edge Versions": "analyse_edge_inventory",
     "[System] Patch Levels": "analyse_software_update",
     "[System] Config Consistency Real": "analyse_structural_diff",
-    "[System] Edge Config Stack Review": "get_edge_configuration_modules",
+    "[System] Edge Config Stack Review": "get_edge_configuration_stack, analyse_edge_config_stack",
     "[System] Edge Certificate Authentication": "analyse_edge_certificate_auth",
     "[System] NTP Time Synchronisation": "analyse_device_hardening",
     "[System] Edge Override Governance": "analyse_override_governance",
@@ -4552,7 +4726,9 @@ _TITLE_INFERENCE = [
     ("HA peer last contact", "[System] High Availability Configuration"),
     ("HA pair config mismatch", "[System] High Availability Configuration"),
     ("standby serial metadata", "[System] High Availability Configuration"),
-    ("override active", "[System] Edge Override Governance"),
+    ("override flag set", "[System] Edge Config Stack Review"),
+    ("configuration stack", "[System] Edge Config Stack Review"),
+    ("edge-specific profile", "[System] Edge Config Stack Review"),
     ("Software update", "[System] Patch Levels"),
     ("NAT rule", "[FW] NAT Exposure"),
     ("Firewall active but logging", "[FW] Firewall Event Logging"),
@@ -5049,6 +5225,7 @@ def main() -> None:
     firewall_dir          = os.path.join(OUTPUT_DIR, "firewall")
     wan_dir               = os.path.join(OUTPUT_DIR, "wan")
     certs_dir             = os.path.join(OUTPUT_DIR, "certs")
+    stacks_dir            = os.path.join(OUTPUT_DIR, "stacks")
     combined_dir          = os.path.join(OUTPUT_DIR, "combined")
     combined_records      = []
     enterprise_services = get_enterprise_services_payload()
@@ -5094,9 +5271,16 @@ def main() -> None:
         ds_cfg = {}
         qos_cfg = {}
         edge_certs = []
+        edge_stack = []
         modules = {}
         if enid:
             modules = get_edge_configuration_modules(enid) or {}
+            edge_stack = get_edge_configuration_stack(enid) or []
+            if edge_stack:
+                save_json(
+                    os.path.join(stacks_dir, f"{safe_name(en)}.json"),
+                    _sanitize_stack(edge_stack),
+                )
             fw_cfg = _module_data(modules, "firewall")
             wan_cfg = _module_data(modules, "WAN")
             cp_cfg = _module_data(modules, "controlPlane")
@@ -5123,6 +5307,7 @@ def main() -> None:
         rec["deviceSettingsModule"] = ds_cfg
         rec["qosConfig"]           = qos_cfg
         rec["edgeCertificates"]    = _sanitize_cert_records(edge_certs)
+        rec["configurationStack"]  = _sanitize_stack(edge_stack)
         rec["configurationModules"] = modules if enid else {}
         save_json(os.path.join(combined_dir, f"{safe_name(en)}_combined.json"), rec)
         combined_records.append(rec)
@@ -5181,6 +5366,7 @@ def main() -> None:
         )
         analyse_firewall_logging(ctx, fw_cfg, effective, all_findings)
         analyse_override_governance(ctx, all_findings)
+        analyse_edge_config_stack(ctx, rec.get("configurationStack") or [], all_findings)
         analyse_software_update(ctx, pcfg, ecfg, all_findings)
         analyse_nat_exposure(ctx, pcfg, ecfg, all_findings)
         analyse_business_policy(ctx, wan_cfg, pcfg, ecfg, all_findings)

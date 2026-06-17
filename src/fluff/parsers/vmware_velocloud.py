@@ -233,6 +233,11 @@ def _to_flat_text(record: dict, coverage_lines: list[str] | None = None) -> str:
     if certs:
         lines.extend(_flatten(certs, "certs"))
 
+    # Configuration stack (ordered list of profile/edge override entries)
+    stack = record.get("configurationStack") or []
+    if stack:
+        lines.extend(_flatten(stack, "stack"))
+
     # Raw configuration modules dict (full portal modules, keyed by module type).
     # Only non-redundant modules are flattened here; firewall/WAN/controlPlane/
     # deviceSettings/QOS are already present via their dedicated prefixes above.
