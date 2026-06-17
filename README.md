@@ -610,7 +610,25 @@ Vendor fingerprinting uses a **score-based signal system**. Each profile has a s
 
 For example, `cisco_ios` scores from: `Building configuration` (3.0 pts), `version X.Y` (2.0 pts), `line vty/con/aux` (2.0 pts), and so on. Competing profiles include negative signals (e.g., `ASA Version` deducts from `cisco_ios`).
 
-If detection fails or is ambiguous, force the profile with `--vendor <profile>`.
+Collector-generated files (`velo_collector.py`, `nsx_collector.py`) embed a `"_nd_toad_profile"` marker that short-circuits scoring and returns 100% confidence immediately.
+
+Tested against the full `samples/` corpus (94 config files across all 20 profiles), the engine achieves **90% correct auto-detection**. The remaining 10% are all `cisco_xe` configs misidentified as `cisco_ios` or `cisco_xr` — see the known limitation below.
+
+> **⚠ Known limitation — Cisco IOS vs IOS-XE vs IOS-XR overlap**
+>
+> `cisco_ios`, `cisco_xe`, and `cisco_xr` share the vast majority of their CLI syntax. Auto-detection only separates them reliably when the config contains XE-specific constructs (`platform type`, `AppGigabitEthernet`, `boot-start-marker`, high-speed interface names like `TenGigabitEthernet`) or XR-specific constructs (`!! IOS XR` header, `task-group`/`task-permission` RBAC, four-part interface names like `GigabitEthernet0/0/0/0`).
+>
+> Minimal or routing-only configs that lack these markers will be misidentified. If you know the platform, always force the profile:
+> ```bash
+> nd-toad audit -i config.txt --vendor cisco_xe
+> nd-toad audit -i config.txt --vendor cisco_xr
+> ```
+> You can also add a RANCID-style comment as the first line of the file to make detection unambiguous:
+> ```
+> !RANCID-CONTENT-TYPE: cisco-xe
+> ```
+
+If detection fails or is ambiguous for any other vendor, force the profile with `--vendor <profile>`.
 
 ---
 
