@@ -5298,6 +5298,7 @@ def main() -> None:
                 )
 
         rec = deepcopy(item)
+        rec["_nd_toad_profile"]    = "vmware_velocloud"
         rec["profileConfig"]       = pcfg
         rec["profileFirewall"]     = profile_fw
         rec["edgeConfig"]          = ecfg

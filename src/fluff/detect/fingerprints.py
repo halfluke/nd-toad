@@ -313,6 +313,9 @@ PROFILE_SIGNALS: dict[str, list[_Signal]] = {
     # Input: flat dot-notation text produced by the VeloCloudConfig parser
     # (originally a combined/<edge>_combined.json from tools/velo_collector.py)
     "vmware_velocloud": [
+        # Collector marker — written by velo_collector.py into every combined JSON
+        (r'"_nd_toad_profile"\s*:\s*"vmware_velocloud"', 10.0, "VeloCloud nd-toad profile marker (JSON)"),
+        (r'(?m)^_nd_toad_profile = vmware_velocloud', 10.0, "VeloCloud nd-toad profile marker (flat)"),
         # Mandatory: collector always writes these top-level edge keys
         (r"(?m)^edge\.edgeName = ", 5.0, "VeloCloud edge.edgeName flat key"),
         (r"(?m)^edge\.activationState = ", 4.0, "VeloCloud edge.activationState"),
@@ -330,7 +333,7 @@ PROFILE_SIGNALS: dict[str, list[_Signal]] = {
         (r'"wanConfig"\s*:', 3.0, "VeloCloud wanConfig JSON key"),
         (r'"activationState"\s*:\s*"ACTIVATED"', 4.0, "VeloCloud ACTIVATED state JSON"),
         # Negative: avoid confusion with NSX bundle
-        (r'"_nd_toad_profile"\s*:\s*"vmware_nsx"', -10.0, "NSX bundle marker (not VeloCloud)"),
+        (r'"_nd_toad_profile"\s*:\s*"vmware_nsx"', -10.0, "NSX nd-toad marker (not VeloCloud)"),
     ],
     # -------------------------------------------------------- VMware NSX 4.x
     # Input: flat dot-notation text produced by the VmwareNSXConfig parser
