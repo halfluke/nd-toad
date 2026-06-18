@@ -370,7 +370,7 @@ def portal_rpc(method: str, params: dict, request_id: int = 1):
 def get_portal_edge_list() -> list:
     params = {
         "enterpriseId": int(VCO_ENTERPRISE_NUMERIC_ID),
-        "with": ["ha", "configuration", "licenses", "analyticsMode", "selfHealing"],
+        "with": ["ha", "links", "configuration", "licenses", "analyticsMode", "selfHealing"],
         "sortBy": [{"attribute": "name", "type": "ASC"}],
         "limit": 2000,
         "_filterSpec": True,
@@ -2375,6 +2375,10 @@ _CERT_AUTH_MODES = {
     "CERTIFICATE_ACQUIRE",
     "CERTIFICATE_REQUIRED",
 }
+# Portal API endpointPkiMode CERTIFICATE_OPTIONAL == GUI "Certificate Acquire".
+_ENTERPRISE_PKI_ACQUIRE_MODES = {"CERTIFICATE_OPTIONAL", "CERTIFICATE_ACQUIRE"}
+_ENTERPRISE_PKI_REQUIRED_MODES = {"CERTIFICATE_REQUIRED"}
+_ENTERPRISE_PKI_WEAK_MODES = {"", "CERTIFICATE_DISABLED"}
 _HA_CPE_SUFFIX_RE = re.compile(r"^(?P<base>.+)-(CPE0|CPE1)$", re.IGNORECASE)
 
 
@@ -2400,6 +2404,23 @@ def _is_cert_auth_mode(auth_mode: str) -> bool:
     if auth_mode in _CERT_AUTH_MODES:
         return True
     return "ACQUIRE" in auth_mode or "REQUIRED" in auth_mode
+
+
+def _is_enterprise_pki_acquire(pki_mode: str) -> bool:
+    return pki_mode in _ENTERPRISE_PKI_ACQUIRE_MODES
+
+
+def _is_enterprise_pki_cert_enforced(pki_mode: str) -> bool:
+    return (
+        _is_enterprise_pki_acquire(pki_mode)
+        or pki_mode in _ENTERPRISE_PKI_REQUIRED_MODES
+    )
+
+
+def _cert_auth_strict_required(auth_mode: str, pki_mode: str) -> bool:
+    if "REQUIRED" in auth_mode:
+        return True
+    return not auth_mode and pki_mode in _ENTERPRISE_PKI_REQUIRED_MODES
 
 
 def _aaa_service_configured(service) -> bool:
@@ -2601,28 +2622,32 @@ def analyse_edge_certificate_auth(
             methodology_ref="[System] Edge Certificate Authentication",
             automation="partial",
         ))
-    elif not _is_cert_auth_mode(auth_mode):
-        if pki_mode in {"", "CERTIFICATE_DISABLED", "CERTIFICATE_OPTIONAL"}:
+        return
+
+    if not _is_cert_auth_mode(auth_mode):
+        if pki_mode in _ENTERPRISE_PKI_WEAK_MODES:
             findings.append(_finding(
                 ctx, "edge_certificate_auth", "low",
-                "Edge certificate authentication mode not set to Certificate Acquire/Required",
+                "Edge certificate authentication not enforced (enterprise PKI disabled or unset)",
                 "edgePortalRecord.authenticationMode|enterprise.endpointPkiMode",
                 json.dumps(policy_evidence, ensure_ascii=False),
-                "Use Certificate Acquire or Certificate Required instead of pre-shared key only.",
+                "Set enterprise Default Certificate to Certificate Acquire or Certificate Required.",
                 methodology_ref="[System] Edge Certificate Authentication",
                 automation="partial",
             ))
+            return
 
-    if not _is_cert_auth_mode(auth_mode) and not _is_psk_auth_mode(auth_mode):
+    if not _is_cert_auth_mode(auth_mode) and not _is_enterprise_pki_cert_enforced(pki_mode):
         return
 
     certs_by_serial = _certs_by_serial(edge_certs or [])
     now = datetime.now(timezone.utc)
     targets = serials or {"unknown"}
+    strict_required = _cert_auth_strict_required(auth_mode, pki_mode)
     for serial in sorted(targets):
         latest = _latest_cert(certs_by_serial.get(serial, []))
         if not latest:
-            sev = "high" if auth_mode.endswith("REQUIRED") or "REQUIRED" in auth_mode else "medium"
+            sev = "high" if strict_required else "medium"
             findings.append(_finding(
                 ctx, "edge_certificate_auth", sev,
                 f"No edge certificate found for serial {serial}",
@@ -2797,6 +2822,189 @@ def analyse_dns(ctx: dict, profile_cfg: dict, edge_cfg: dict, findings: list) ->
     ))
 
 
+_HA_LINK_DOWN_STATES = {"DOWN", "UNSTABLE", "FAILED"}
+_HA_HEALTHY_STATES = {"READY", "ACTIVE", "STANDBY"}
+_OFFLINE_STATES = {"OFFLINE", "DISCONNECTED", "NEVER_ACTIVATED"}
+
+
+def _iso_age_days(ts) -> int | None:
+    if not ts:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+        return (datetime.now(timezone.utc) - dt).days
+    except ValueError:
+        return None
+
+
+def _portal_link_records(portal: dict) -> list:
+    links = portal.get("links") or portal.get("recentLinks") or []
+    return links if isinstance(links, list) else []
+
+
+def _link_is_down(link: dict) -> bool:
+    if not isinstance(link, dict):
+        return False
+    for key in ("effectiveState", "state", "vpnState"):
+        if str(link.get(key, "")).upper() in _HA_LINK_DOWN_STATES:
+            return True
+    return False
+
+
+def _active_orchestrator_healthy(portal: dict) -> bool:
+    state = str(portal.get("edgeState") or "").upper()
+    if state in _OFFLINE_STATES:
+        return False
+    age_days = _iso_age_days(portal.get("lastContact"))
+    return age_days is None or age_days < STALE_EDGE_DAYS
+
+
+def _is_enhanced_ha_edge(portal: dict, ha: dict, ha_data: dict) -> bool:
+    ha_type = str(ha.get("type", "")).upper()
+    ha_mode = str(ha_data.get("haMode") or portal.get("haMode") or "").lower()
+    return ha_mode == "enhanced" or ha_type in {"ACTIVE_STANDBY", "ACTIVE_ACTIVE"}
+
+
+def _summarise_ha_links(links: list) -> list:
+    summary = []
+    for link in links:
+        if not isinstance(link, dict):
+            continue
+        summary.append({
+            "interface": link.get("interface"),
+            "ipAddress": link.get("ipAddress"),
+            "state": link.get("state"),
+            "effectiveState": link.get("effectiveState"),
+            "linkMode": link.get("linkMode"),
+            "lastActive": link.get("lastActive"),
+        })
+    return summary
+
+
+def _classify_ha_peer_issue(portal: dict, ha: dict, ha_data: dict) -> dict | None:
+    """
+    Distinguish real HA/WAN failure from peer-visibility degradation.
+
+    Uses Portal inventory: haLastContact, haPreviousState, edgeState/lastContact,
+    and per-link state from enterprise/getEnterpriseEdgeList (with: links).
+
+    Note: the Monitor → System → HA Standby view is not exposed on Portal RPC;
+    when active path is healthy but peer metadata is stale, evidence includes a
+    GUI validation hint for that screen.
+    """
+    peer_contact = ha_data.get("haLastContact") or portal.get("haLastContact")
+    peer_age_days = _iso_age_days(peer_contact)
+    peer_stale = peer_age_days is not None and peer_age_days >= STALE_EDGE_DAYS
+    prev_failed = str(
+        ha_data.get("haPreviousState") or portal.get("haPreviousState") or ""
+    ).upper() == "FAILED"
+
+    if not peer_stale and not prev_failed:
+        return None
+
+    edge_state = str(portal.get("edgeState") or "").upper()
+    orch_age_days = _iso_age_days(portal.get("lastContact"))
+    active_ok = _active_orchestrator_healthy(portal)
+    enhanced = _is_enhanced_ha_edge(portal, ha, ha_data)
+
+    links = _portal_link_records(portal)
+    down_links = [link for link in links if _link_is_down(link)]
+    links_available = bool(links)
+    all_links_stable = links_available and not down_links
+
+    evidence = {
+        "haType": ha.get("type"),
+        "haMode": ha_data.get("haMode") or portal.get("haMode"),
+        "haState": ha_data.get("haState") or portal.get("haState"),
+        "haPreviousState": ha_data.get("haPreviousState") or portal.get("haPreviousState"),
+        "haLastContact": peer_contact,
+        "haLastContactAgeDays": peer_age_days,
+        "edgeState": edge_state,
+        "lastContact": portal.get("lastContact"),
+        "lastContactAgeDays": orch_age_days,
+        "activeSerial": portal.get("serialNumber"),
+        "standbySerial": portal.get("haSerialNumber") or ha_data.get("haSerialNumber"),
+        "standbyDeviceId": portal.get("standbyDeviceId"),
+        "linksSummary": _summarise_ha_links(links),
+    }
+
+    if edge_state in _OFFLINE_STATES:
+        evidence["classification"] = "ha_active_offline"
+        return {
+            "classification": "ha_active_offline",
+            "severity": "high",
+            "title": "HA edge offline — active unit not connected to Orchestrator",
+            "fieldPath": "edgePortalRecord.edgeState",
+            "note": "Restore active edge connectivity before relying on HA failover.",
+            "evidence": evidence,
+        }
+
+    if down_links:
+        ifaces = ", ".join(
+            str(link.get("interface") or link.get("displayName") or "?")
+            for link in down_links
+        )
+        evidence["classification"] = "ha_wan_link_down"
+        evidence["downLinks"] = _summarise_ha_links(down_links)
+        return {
+            "classification": "ha_wan_link_down",
+            "severity": "high",
+            "title": f"HA WAN link down ({ifaces})",
+            "fieldPath": "edgePortalRecord.links",
+            "note": "Restore down WAN/HA links and confirm failover readiness.",
+            "evidence": evidence,
+        }
+
+    if peer_stale and active_ok and all_links_stable:
+        evidence["classification"] = "ha_peer_visibility_degraded"
+        evidence["guiValidation"] = (
+            "Monitor → System → HA Standby may show peer interface DOWN while "
+            "Overview → Links remains Stable (enhanced HA peer-view mismatch)."
+        )
+        mode_label = "Enhanced HA" if enhanced else "HA"
+        return {
+            "classification": "ha_peer_visibility_degraded",
+            "severity": "medium",
+            "title": (
+                f"{mode_label} peer visibility degraded — active path healthy, "
+                f"HA heartbeat stale ({peer_age_days} days)"
+            ),
+            "fieldPath": "edgePortalRecord.ha.data.haLastContact",
+            "note": (
+                "Active edge is connected and Overview links are stable, but HA peer "
+                "metadata is stale. This indicates peer monitoring / failover-readiness "
+                "risk, not standby-to-Orchestrator contact loss. Validate Monitor → "
+                "System → HA Standby and HA interconnect; review HA events since "
+                f"{peer_contact or 'last peer contact'}."
+            ),
+            "evidence": evidence,
+        }
+
+    if peer_stale:
+        evidence["classification"] = "ha_peer_heartbeat_stale"
+        return {
+            "classification": "ha_peer_heartbeat_stale",
+            "severity": "medium",
+            "title": f"HA peer heartbeat stale ({peer_age_days} days since haLastContact)",
+            "fieldPath": "edgePortalRecord.ha.data.haLastContact",
+            "note": "Investigate HA peer connectivity and failover readiness.",
+            "evidence": evidence,
+        }
+
+    evidence["classification"] = "ha_previous_failure_unresolved"
+    return {
+        "classification": "ha_previous_failure_unresolved",
+        "severity": "low",
+        "title": "HA pair reports prior FAILED state with healthy active path",
+        "fieldPath": "edgePortalRecord.ha.data.haPreviousState",
+        "note": (
+            "Review HA events and validate failover readiness under Monitor → "
+            "System → HA Standby."
+        ),
+        "evidence": evidence,
+    }
+
+
 def analyse_ha_config(ctx: dict, findings: list) -> None:
     """[System] High Availability Configuration."""
     portal = ctx.get("edgePortalRecord") or {}
@@ -2815,7 +3023,7 @@ def analyse_ha_config(ctx: dict, findings: list) -> None:
             "Verify HA standby unit is paired and reporting.",
             methodology_ref="[System] High Availability Configuration",
         ))
-    if ha_state and ha_state not in {"READY", "ACTIVE", "STANDBY"}:
+    if ha_state and ha_state not in _HA_HEALTHY_STATES:
         findings.append(_finding(
             ctx, "edge_inventory", "medium",
             f"HA edge state is {ha_state}",
@@ -2824,22 +3032,17 @@ def analyse_ha_config(ctx: dict, findings: list) -> None:
             "Verify HA pair health and failover readiness.",
             methodology_ref="[System] High Availability Configuration",
         ))
-    last_contact = ha_data.get("haLastContact")
-    if last_contact:
-        try:
-            lc = datetime.fromisoformat(str(last_contact).replace("Z", "+00:00"))
-            age_days = (datetime.now(timezone.utc) - lc).days
-            if age_days >= STALE_EDGE_DAYS:
-                findings.append(_finding(
-                    ctx, "edge_inventory", "medium",
-                    f"HA peer last contact {age_days} days ago",
-                    "edgePortalRecord.ha.data.haLastContact",
-                    f"haLastContact={last_contact}",
-                    "Investigate HA peer connectivity.",
-                    methodology_ref="[System] High Availability Configuration",
-                ))
-        except ValueError:
-            pass
+
+    peer_issue = _classify_ha_peer_issue(portal, ha, ha_data)
+    if peer_issue:
+        findings.append(_finding(
+            ctx, "edge_inventory", peer_issue["severity"],
+            peer_issue["title"],
+            peer_issue["fieldPath"],
+            json.dumps(peer_issue["evidence"], ensure_ascii=False),
+            peer_issue["note"],
+            methodology_ref="[System] High Availability Configuration",
+        ))
 
 
 def analyse_security_features(ctx: dict, firewall_cfg: dict, findings: list) -> None:
@@ -2868,9 +3071,6 @@ def analyse_security_features(ctx: dict, firewall_cfg: dict, findings: list) -> 
 # ─────────────────────────────────────────────────────────────────────────────
 # MODULE 4 — EDGE INVENTORY (portal metadata)
 # ─────────────────────────────────────────────────────────────────────────────
-
-_OFFLINE_STATES = {"OFFLINE", "DISCONNECTED", "NEVER_ACTIVATED"}
-
 
 def analyse_edge_inventory(ctx: dict, findings: list) -> None:
     portal = ctx.get("edgePortalRecord") or {}
@@ -4667,7 +4867,7 @@ _TITLE_INFERENCE = [
     ("TACACS", "[System] Edge Admin AAA (TACACS/RADIUS)"),
     ("admin authentication not configured", "[System] Edge Admin AAA (TACACS/RADIUS)"),
     ("pre-shared key authentication", "[System] Edge Certificate Authentication"),
-    ("certificate authentication mode", "[System] Edge Certificate Authentication"),
+    ("certificate authentication not enforced", "[System] Edge Certificate Authentication"),
     ("Edge certificate expiring", "[System] Edge Certificate Authentication"),
     ("Edge certificate expired", "[System] Edge Certificate Authentication"),
     ("No edge certificate found", "[System] Edge Certificate Authentication"),
@@ -4723,7 +4923,11 @@ _TITLE_INFERENCE = [
     ("VPN edge-to-datacentre setting differs", "[Isolation] Profile Inheritance"),
     ("more NAT rules than profile", "[Isolation] Profile Inheritance"),
     ("HA edge state", "[System] High Availability Configuration"),
-    ("HA peer last contact", "[System] High Availability Configuration"),
+    ("HA peer visibility degraded", "[System] High Availability Configuration"),
+    ("HA peer heartbeat stale", "[System] High Availability Configuration"),
+    ("HA WAN link down", "[System] High Availability Configuration"),
+    ("HA edge offline", "[System] High Availability Configuration"),
+    ("HA pair reports prior FAILED", "[System] High Availability Configuration"),
     ("HA pair config mismatch", "[System] High Availability Configuration"),
     ("standby serial metadata", "[System] High Availability Configuration"),
     ("override flag set", "[System] Edge Config Stack Review"),
