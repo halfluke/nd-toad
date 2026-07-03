@@ -22,3 +22,7 @@ nsxenv.txt
 # Collector output directories (may contain real device data)
 vco_output/
 nsx_bundle*.json
+
+# Presentation artifacts (generated locally)
+ND-TOAD_vs_DOAT_7min.pptx
+tools/build_nd_toad_vs_doat_pptx.py
