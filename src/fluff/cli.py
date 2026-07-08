@@ -19,6 +19,7 @@ from rich.console import Console
 from rich.table import Table
 from rich import box
 
+from fluff.banner import print_banner
 from fluff.detect.fingerprints import detect_from_file
 from fluff.detect.models import PROFILES, PROFILE_VENDOR
 from fluff.engine.models import Status, Severity
@@ -91,6 +92,9 @@ def audit_cmd(
         raise typer.Exit(code=1)
 
     silent_terminal = json_stdout or csv_stdout
+    if not silent_terminal:
+        print_banner(console)
+
     all_results = []
     for cfg_file in files:
         result = _audit_file(cfg_file, vendor_override=vendor, quiet=silent_terminal)
@@ -216,6 +220,7 @@ def _print_result(result, *, show_pass: bool, show_manual: bool) -> None:
 @app.command("vendors")
 def list_vendors() -> None:
     """List all supported vendor profiles."""
+    print_banner(console)
     table = Table(title="Supported Profiles", box=box.SIMPLE, show_header=True)
     table.add_column("Profile", style="bold")
     table.add_column("Vendor")
@@ -233,6 +238,7 @@ def detect_cmd(
         err_console.print(f"[red]Error:[/red] File not found: {input_file}")
         raise typer.Exit(code=1)
 
+    print_banner(console)
     result = detect_from_file(input_file)
     if result is None:
         console.print("[yellow]Unknown vendor[/yellow] — no profile reached detection threshold.")

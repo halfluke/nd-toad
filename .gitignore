@@ -25,4 +25,6 @@ nsx_bundle*.json
 
 # Presentation artifacts (generated locally)
 ND-TOAD_vs_DOAT_7min.pptx
+presentation_assets/
 tools/build_nd_toad_vs_doat_pptx.py
+tools/capture_presentation_screenshots.py
