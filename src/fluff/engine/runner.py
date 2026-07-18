@@ -28,6 +28,7 @@ from fluff.engine.probe import ProbeResult, run_probe
 
 if TYPE_CHECKING:
     from fluff.parsers.base import ParsedConfig
+    from fluff.policy import Policy
 
 CHECKS_DIR = Path(__file__).parent.parent / "checks"
 
@@ -53,7 +54,7 @@ def _load_cis_catalog(profile: str) -> list[dict[str, Any]]:
 
 # ------------------------------------------------------------------ runner
 
-def audit(config: "ParsedConfig") -> AuditResult:
+def audit(config: "ParsedConfig", *, policy: "Policy | None" = None) -> AuditResult:
     """Run all checks for *config* and return a structured AuditResult."""
     checks = _load_vendor_checks(config.profile)
     cis_catalog = _load_cis_catalog(config.profile)
@@ -122,6 +123,12 @@ def audit(config: "ParsedConfig") -> AuditResult:
             )
         )
 
+    hostname = config.get_hostname()
+    if policy is not None:
+        from fluff.policy import apply_policy
+
+        apply_policy(findings, hostname, policy)
+
     return AuditResult(
         summary=_summarise(config, findings),
         findings=findings,
@@ -129,12 +136,18 @@ def audit(config: "ParsedConfig") -> AuditResult:
 
 
 def _summarise(config: "ParsedConfig", findings: list[Finding]) -> AuditSummary:
-    _manual_statuses = (Status.MANUAL, Status.MANUAL_FP_RISK, Status.NOT_APPLICABLE)
-    automated = [f for f in findings if f.status not in _manual_statuses]
+    _non_score = (
+        Status.MANUAL,
+        Status.MANUAL_FP_RISK,
+        Status.NOT_APPLICABLE,
+        Status.EXEMPT,
+    )
+    automated = [f for f in findings if f.status not in _non_score]
     passed = sum(1 for f in automated if f.status == Status.PASS)
     failed = sum(1 for f in automated if f.status == Status.FAIL)
     manual_count = sum(1 for f in findings if f.status in (Status.MANUAL, Status.MANUAL_FP_RISK))
     na_count = sum(1 for f in findings if f.status == Status.NOT_APPLICABLE)
+    exempt_count = sum(1 for f in findings if f.status == Status.EXEMPT)
     compliance_score = round(passed / len(automated) * 100, 1) if automated else 0.0
 
     return AuditSummary(
@@ -147,4 +160,5 @@ def _summarise(config: "ParsedConfig", findings: list[Finding]) -> AuditSummary:
         manual=manual_count,
         not_applicable=na_count,
         compliance_score=compliance_score,
+        exempt=exempt_count,
     )

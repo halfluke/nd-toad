@@ -150,7 +150,7 @@ def test_audit_result_summary_fields() -> None:
     config = load_config(path, "cisco_ios")
     result = audit(config)
     s = result.summary
-    assert s.total == s.passed + s.failed + s.manual + s.not_applicable
+    assert s.total == s.passed + s.failed + s.manual + s.not_applicable + s.exempt
     assert s.profile == "cisco_ios"
     assert s.input_file.endswith("good.conf")
 

@@ -43,6 +43,7 @@ FIELDNAMES = [
     "cis_controls",
     "evidence",
     "remediation",
+    "exemption_reason",
 ]
 
 
@@ -69,6 +70,7 @@ def _rows(result: AuditResult) -> list[dict]:
                 "cis_controls": cis_labels,
                 "evidence": " | ".join(f.evidence),
                 "remediation": f.remediation,
+                "exemption_reason": f.exemption_reason,
             }
         )
     return rows

@@ -54,6 +54,60 @@ def test_write_json_to_string() -> None:
     assert "findings" in parsed
 
 
+def test_cis_summary_prefers_exempt_over_pass() -> None:
+    from fluff.engine.models import CISRef, Finding, Severity, Status
+    from fluff.engine.models import AuditResult, AuditSummary
+    from fluff.report.json_report import render
+
+    cis = [CISRef(benchmark="CIS Cisco IOS 17", control="3.1.1", level=1)]
+    findings = [
+        Finding(
+            check_id="A",
+            generic_id="G",
+            title="pass",
+            description="",
+            vendor="cisco",
+            profile="cisco_ios",
+            status=Status.PASS,
+            severity=Severity.MEDIUM,
+            cis=cis,
+            evidence=[],
+            remediation="",
+        ),
+        Finding(
+            check_id="B",
+            generic_id="G",
+            title="exempt",
+            description="",
+            vendor="cisco",
+            profile="cisco_ios",
+            status=Status.EXEMPT,
+            severity=Severity.MEDIUM,
+            cis=cis,
+            evidence=[],
+            remediation="",
+            exemption_reason="accepted",
+        ),
+    ]
+    result = AuditResult(
+        summary=AuditSummary(
+            profile="cisco_ios",
+            hostname="R1",
+            input_file="x.conf",
+            total=2,
+            passed=1,
+            failed=0,
+            manual=0,
+            not_applicable=0,
+            compliance_score=100.0,
+            exempt=1,
+        ),
+        findings=findings,
+    )
+    data = render(result)
+    assert data["cis_summary"]["CIS Cisco IOS 17 — 3.1.1"]["status"] == "exempt"
+
+
 def test_cis_summary_aggregates_correctly() -> None:
     result = _get_ios_result()
     data = render(result)

@@ -36,9 +36,12 @@ def render(result: AuditResult) -> dict:
 
 
 def _aggregate_status(findings: list[dict]) -> str:
+    # Worst-first so exemptions are not hidden behind a sibling pass.
     statuses = {f["status"] for f in findings}
     if Status.FAIL.value in statuses:
         return Status.FAIL.value
+    if Status.EXEMPT.value in statuses:
+        return Status.EXEMPT.value
     if Status.PASS.value in statuses:
         return Status.PASS.value
     if Status.MANUAL.value in statuses or Status.MANUAL_FP_RISK.value in statuses:

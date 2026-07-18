@@ -12,6 +12,7 @@ class Status(str, Enum):
     MANUAL = "manual"
     MANUAL_FP_RISK = "manual_fp_risk"
     NOT_APPLICABLE = "not_applicable"
+    EXEMPT = "exempt"
 
 
 class Severity(str, Enum):
@@ -49,9 +50,10 @@ class Finding:
     cis: list[CISRef]
     evidence: list[str]
     remediation: str
+    exemption_reason: str = ""
 
     def as_dict(self) -> dict:
-        return {
+        data = {
             "check_id": self.check_id,
             "generic_id": self.generic_id,
             "title": self.title,
@@ -64,6 +66,9 @@ class Finding:
             "evidence": self.evidence,
             "remediation": self.remediation,
         }
+        if self.exemption_reason:
+            data["exemption_reason"] = self.exemption_reason
+        return data
 
 
 @dataclass
@@ -77,6 +82,7 @@ class AuditSummary:
     manual: int
     not_applicable: int
     compliance_score: float  # percentage of automated checks passing
+    exempt: int = 0
 
     def as_dict(self) -> dict:
         return {
@@ -88,6 +94,7 @@ class AuditSummary:
             "failed": self.failed,
             "manual": self.manual,
             "not_applicable": self.not_applicable,
+            "exempt": self.exempt,
             "compliance_score": self.compliance_score,
         }
 
